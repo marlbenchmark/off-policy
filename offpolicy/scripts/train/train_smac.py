@@ -19,7 +19,7 @@ from offpolicy.envs.starcraft2.smac_maps import get_map_params
 from offpolicy.envs.env_wrappers import ShareDummyVecEnv, ShareSubprocVecEnv
 
 
-def make_parallel_env(all_args):
+def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "StarCraft2":
@@ -124,7 +124,7 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
-    env = make_parallel_env(all_args)
+    env = make_train_env(all_args)
     buffer_length = get_map_params(all_args.map_name)["limit"]
     print(buffer_length)
     num_agents = get_map_params(all_args.map_name)["n_agents"]
@@ -154,12 +154,11 @@ def main(args):
 
     # choose algo
     if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac", "qmix", "vdn"]:
-        from algorithms.RecRunner import RecRunner as Runner
-        assert all_args.n_rollout_threads == 1, (
-            "only support 1 env in recurrent version.")
-        eval_env = make_parallel_env(all_args)
+        from offpolicy.runner.rnn.smac_runner import RecRunner as Runner
+        assert all_args.n_rollout_threads == 1, ("only support 1 env in recurrent version.")
+        eval_env = make_train_env(all_args)
     elif all_args.algorithm_name in ["matd3", "maddpg", "masac", "mqmix", "mvdn"]:
-        from algorithms.MlpRunner import MlpRunner as Runner
+        from offpolicy.runner.mlp.smac_runner import MlpRunner as Runner
         eval_env = make_eval_env(all_args)
     else:
         raise NotImplementedError
@@ -171,7 +170,6 @@ def main(args):
               "eval_env": eval_env,
               "num_agents": num_agents,
               "device": device,
-              "special_name": all_args.map_name,
               "run_dir": run_dir,
               "buffer_length": buffer_length,
               "use_same_share_obs": all_args.use_same_share_obs,
@@ -189,8 +187,7 @@ def main(args):
     if all_args.use_wandb:
         run.finish()
     else:
-        runner.writter.export_scalars_to_json(
-            str(runner.log_dir + '/summary.json'))
+        runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
         runner.writter.close()
 
 

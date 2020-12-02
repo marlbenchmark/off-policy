@@ -16,7 +16,7 @@ from offpolicy.envs.mpe.MPE_Env import MPEEnv
 from offpolicy.envs.env_wrappers import DummyVecEnv, SubprocVecEnv
 
 
-def make_parallel_env(all_args):
+def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "MPE":
@@ -125,7 +125,7 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
-    env = make_parallel_env(all_args)
+    env = make_train_env(all_args)
     num_agents = all_args.num_agents
 
     # create policies and mapping fn
@@ -153,12 +153,12 @@ def main(args):
 
     # choose algo
     if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac", "qmix", "vdn"]:
-        from algorithms.RecRunner import RecRunner as Runner
+        from offpolicy.runner.rnn.mpe_runner import RecRunner as Runner
         assert all_args.n_rollout_threads == 1, (
             "only support 1 env in recurrent version.")
         eval_env = env
     elif all_args.algorithm_name in ["matd3", "maddpg", "masac", "mqmix", "mvdn"]:
-        from algorithms.MlpRunner import MlpRunner as Runner
+        from offpolicy.runner.mlp.mpe_runner import MlpRunner as Runner
         eval_env = make_eval_env(all_args)
     else:
         raise NotImplementedError
@@ -171,7 +171,6 @@ def main(args):
               "num_agents": num_agents,
               "device": device,
               "use_same_share_obs": all_args.use_same_share_obs,
-              "special_name": all_args.scenario_name,
               "run_dir": run_dir
               }
 

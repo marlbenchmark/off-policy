@@ -312,8 +312,7 @@ class MADDPG:
                 critic_loss = mse_loss(error)
 
             if self.use_value_active_masks:
-                critic_loss = (critic_loss * (1 - all_agent_dones)
-                               ).sum() / (1 - all_agent_dones).sum()
+                critic_loss = (critic_loss * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
             else:
                 critic_loss = critic_loss.mean()
             new_priorities = None
@@ -389,10 +388,8 @@ class MADDPG:
             actor_cent_acts, dim=-1).repeat((num_update_agents, 1)).float()
 
         # combine the buffer cent acts with actor cent acts and pass into buffer
-        actor_update_cent_acts = mask * actor_cent_acts + \
-            (1 - mask) * all_agent_cent_act_buffer
-        actor_Qs = update_policy.critic(
-            all_agent_cent_obs, actor_update_cent_acts)
+        actor_update_cent_acts = mask * actor_cent_acts + (1 - mask) * all_agent_cent_act_buffer
+        actor_Qs = update_policy.critic(all_agent_cent_obs, actor_update_cent_acts)
         # TODO: @Akash what is the difference between mask and done_mask?
         # actor_loss = -actor_Qs.mean()
         actor_Qs = actor_Qs * (1 - done_mask)

@@ -15,7 +15,6 @@ class MlpRunner(object):
         # non-tunable hyperparameters are in args
         self.args = config["args"]
         self.device = config["device"]
-        self.special_name = config["special_name"]
 
         # set tunable hyperparameters
         self.share_policy = self.args.share_policy
@@ -83,17 +82,7 @@ class MlpRunner(object):
         self.num_envs = self.env.num_envs
         self.num_eval_envs = self.eval_env.num_envs
 
-        if self.take_turn:  # hanabi
-            self.collecter = self.shared_collect_rollout_turn
-        elif self.use_avail_acts:  # smac
-            self.collecter = self.shared_collect_rollout_avail
-        elif self.use_cent_agent_obs:  # hide and seek
-            self.collecter = self.shared_collect_rollout_cent
-        else:  # mpe
-            if self.share_policy:
-                self.collecter = self.shared_collect_rollout
-            else:
-                self.collecter = self.separated_collect_rollout
+        self.collecter = self.collect_rollout
 
         self.train = self.batch_train
         self.logger = self.log_stats
@@ -162,8 +151,7 @@ class MlpRunner(object):
             policy_id: self.policies[policy_id].central_obs_dim for policy_id in self.policy_ids}
 
         num_train_iters = self.num_env_steps / self.train_interval
-        self.beta_anneal = DecayThenFlatSchedule(
-            self.per_beta_start, 1.0, num_train_iters, decay="linear")
+        self.beta_anneal = DecayThenFlatSchedule(self.per_beta_start, 1.0, num_train_iters, decay="linear")
 
         if self.use_per:
             self.buffer = PrioritizedMlpReplayBuffer(self.per_alpha,
@@ -183,15 +171,13 @@ class MlpRunner(object):
 
         # fill replay buffer with random actions
         self.finish_first_train_reset = False
-        num_warmup_episodes = max(
-            (self.batch_size/self.episode_length, self.args.num_random_episodes))
+        num_warmup_episodes = max((self.batch_size/self.episode_length, self.args.num_random_episodes))
         self.warmup(num_warmup_episodes)
 
     def run(self):
         # collect data
         self.trainer.prep_rollout()
-        train_step_reward, train_metric = self.collecter(
-            explore=True, training_episode=True, warmup=False)
+        train_step_reward, train_metric = self.collecter(explore=True, training_episode=True, warmup=False)
 
         self.train_step_rewards.append(train_step_reward)
         self.train_metrics.append(train_metric)
@@ -275,9 +261,8 @@ class MlpRunner(object):
                 self.last_hard_update_T = self.total_env_steps
 
     def log(self):
-        print("\n Env {}-{} Algo {} Exp {} runs total num timesteps {}/{}.\n"
-              .format(self.env_name,
-                      self.special_name,
+        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}.\n"
+              .format(self.args.hanabi_name,
                       self.algorithm_name,
                       self.args.experiment_name,
                       self.total_env_steps,
@@ -287,60 +272,24 @@ class MlpRunner(object):
 
         average_step_reward = np.mean(self.train_step_rewards)
 
-        if self.env_name == "MPE":
-            average_episode_reward = average_step_reward * self.episode_length
-            print("train average episode rewards is " +
-                  str(average_episode_reward))
-            if self.use_wandb:
-                wandb.log(
-                    {'train_average_episode_rewards': average_episode_reward}, step=self.total_env_steps)
-            else:
-                self.writter.add_scalars("train_average_episode_rewards", {
-                                         'train_average_episode_rewards': average_episode_reward}, self.total_env_steps)
-
+        print("train_average step rewards is " + str(average_step_reward))
+        if self.use_wandb:
+            wandb.log( {'train_average_step_rewards': average_step_reward}, step=self.total_env_steps)
         else:
-            print("train_average step rewards is " + str(average_step_reward))
-            if self.use_wandb:
-                wandb.log(
-                    {'train_average_step_rewards': average_step_reward}, step=self.total_env_steps)
-            else:
-                self.writter.add_scalars("train_average_step_rewards", {
-                                         'train_average_step_rewards': average_step_reward}, self.total_env_steps)
+            self.writter.add_scalars("train_average_step_rewards", {
+                                        'train_average_step_rewards': average_step_reward}, self.total_env_steps)
 
         self.log_env(self.train_metrics, suffix="train")
         self.log_clear()
 
     def log_env(self, metrics, suffix="train"):
         if len(metrics) > 0:
-            if self.env_name == "Hanabi":
-                metric = np.mean(metrics)
-                print(suffix + " average score is " + str(metric))
-                if self.use_wandb:
-                    wandb.log({suffix + '_score': metric},
-                              step=self.total_env_steps)
-                else:
-                    self.writter.add_scalars(
-                        suffix + '_score', {suffix + '_score': metric}, self.total_env_steps)
-
-            if self.env_name == "StarCraft2":
-                metric = np.mean(metrics)
-                print(suffix + " win rate is " + str(metric))
-                if self.use_wandb:
-                    wandb.log({suffix + '_win_rate': metric},
-                              step=self.total_env_steps)
-                else:
-                    self.writter.add_scalars(
-                        suffix + '_win_rate', {suffix + '_win_rate': metric}, self.total_env_steps)
-
-            if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
-                metric = np.mean(metrics)
-                print(suffix + " success rate is " + str(metric))
-                if self.use_wandb:
-                    wandb.log({suffix + '_success_rate': metric},
-                              step=self.total_env_steps)
-                else:
-                    self.writter.add_scalars(
-                        suffix + '_success_rate', {suffix + '_success_rate': metric}, self.total_env_steps)
+            metric = np.mean(metrics)
+            print(suffix + " average score is " + str(metric))
+            if self.use_wandb:
+                wandb.log({suffix + '_score': metric}, step=self.total_env_steps)
+            else:
+                self.writter.add_scalars(suffix + '_score', {suffix + '_score': metric}, self.total_env_steps)
 
     def log_clear(self):
         self.train_step_rewards = []
@@ -399,39 +348,25 @@ class MlpRunner(object):
     def eval(self):
         self.trainer.prep_rollout()
 
-        if self.env_name == "MPE":
+        eval_step_rewards = []
+        eval_metrics = []
+        for _ in range(self.args.num_eval_episodes):
             eval_step_reward, eval_metric = self.collecter(
                 explore=False, training_episode=False, warmup=False)
-            average_episode_reward = eval_step_reward * self.episode_length
-            print("eval average episode rewards is " +
-                  str(average_episode_reward))
-            if self.use_wandb:
-                wandb.log(
-                    {'eval_average_episode_rewards': average_episode_reward}, step=self.total_env_steps)
-            else:
-                self.writter.add_scalars('eval_average_episode_rewards', {
-                                         'eval_average_episode_rewards': average_episode_reward}, self.total_env_steps)
+            eval_step_rewards.append(eval_step_reward)
+            eval_metrics.append(eval_metric)
+        average_step_reward = np.mean(eval_step_rewards)
+        print("eval average step rewards is " + str(average_step_reward))
+        if self.use_wandb:
+            wandb.log(
+                {'eval_average_step_rewards': average_step_reward}, step=self.total_env_steps)
         else:
-            eval_step_rewards = []
-            eval_metrics = []
-            for _ in range(self.args.num_eval_episodes):
-                eval_step_reward, eval_metric = self.collecter(
-                    explore=False, training_episode=False, warmup=False)
-                eval_step_rewards.append(eval_step_reward)
-                eval_metrics.append(eval_metric)
-            average_step_reward = np.mean(eval_step_rewards)
-            print("eval average step rewards is " + str(average_step_reward))
-            if self.use_wandb:
-                wandb.log(
-                    {'eval_average_step_rewards': average_step_reward}, step=self.total_env_steps)
-            else:
-                self.writter.add_scalars('eval_average_step_rewards', {
-                                         'eval_average_step_rewards': average_step_reward}, self.total_env_steps)
+            self.writter.add_scalars('eval_average_step_rewards', {
+                                        'eval_average_step_rewards': average_step_reward}, self.total_env_steps)
 
         self.log_env(eval_metrics, suffix="eval")
 
-    # for hanabi
-    def shared_collect_rollout_turn(self, explore=True, training_episode=True, warmup=False):
+    def collect_rollout(self, explore=True, training_episode=True, warmup=False):
         p_id = 'policy_0'
         policy = self.policies[p_id]
 
@@ -674,537 +609,6 @@ class MlpRunner(object):
         average_step_reward = np.mean(episode_rewards[p_id])
 
         return average_step_reward, np.mean(score)
-
-    # for smac
-    def shared_collect_rollout_avail(self, explore=True, training_episode=True, warmup=False):
-        p_id = "policy_0"
-        policy = self.policies[p_id]
-
-        env = self.env if explore else self.eval_env
-        n_rollout_threads = self.num_envs if explore else self.num_eval_envs
-
-        battles_won = 0
-
-        if not explore:
-            obs, share_obs, avail_acts = env.reset()
-        else:
-            if self.finish_first_train_reset:
-                obs = self.obs
-                share_obs = self.share_obs
-                avail_acts = self.avail_acts
-            else:
-                obs, share_obs, avail_acts = env.reset()
-                self.finish_first_train_reset = True
-
-        # init
-        episode_rewards = []
-        step_obs = {}
-        step_share_obs = {}
-        step_acts = {}
-        step_rewards = {}
-        step_next_obs = {}
-        step_next_share_obs = {}
-        step_dones = {}
-        step_dones_env = {}
-        step_avail_acts = {}
-        step_next_avail_acts = {}
-
-        for step in range(self.episode_length):
-            obs_batch = np.concatenate(obs)
-            avail_acts_batch = np.concatenate(avail_acts)
-            # get actions for all agents to step the env
-            if warmup:
-                # completely random actions in pre-training warmup phase
-                acts_batch = policy.get_random_actions(
-                    obs_batch, avail_acts_batch)
-            else:
-                # get actions with exploration noise (eps-greedy/Gaussian)
-                if self.algorithm_name == "masac":
-                    acts_batch, _ = policy.get_actions(obs_batch,
-                                                       avail_acts_batch,
-                                                       sample=explore)
-                else:
-                    acts_batch, _ = policy.get_actions(obs_batch,
-                                                       avail_acts_batch,
-                                                       t_env=self.total_env_steps,
-                                                       explore=explore,
-                                                       use_target=False,
-                                                       use_gumbel=False)
-            if not isinstance(acts_batch, np.ndarray):
-                acts_batch = acts_batch.detach().numpy()
-            env_acts = np.split(acts_batch, n_rollout_threads)
-
-            # env step and store the relevant episode information
-            next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(
-                env_acts)
-
-            episode_rewards.append(rewards)
-            dones_env = np.all(dones, axis=1)
-            dones[dones_env == True] = np.zeros(
-                ((dones_env == True).sum(), len(self.policy_agents[p_id]), 1))
-
-            for i in range(n_rollout_threads):
-                if 'won' in infos[i][0].keys():
-                    if infos[i][0]['won']:  # take one agent
-                        battles_won += 1
-
-            if explore and n_rollout_threads == 1 and np.all(dones_env):
-                next_obs, next_share_obs, next_avail_acts = env.reset()
-
-            if not explore and np.any(dones_env):
-                assert n_rollout_threads == 1, (
-                    "only support one env for evaluation in smac domain.")
-                average_step_reward = np.mean(episode_rewards)
-                return average_step_reward, battles_won
-
-            step_obs[p_id] = obs
-            step_share_obs[p_id] = share_obs
-            step_acts[p_id] = env_acts
-            step_rewards[p_id] = rewards
-            step_next_obs[p_id] = next_obs
-            step_next_share_obs[p_id] = next_share_obs
-            step_dones[p_id] = dones
-            step_dones_env[p_id] = dones_env
-            step_avail_acts[p_id] = avail_acts
-            step_next_avail_acts[p_id] = next_avail_acts
-
-            obs = next_obs
-            share_obs = next_share_obs
-            avail_acts = next_avail_acts
-
-            if explore:
-                self.obs = obs
-                self.share_obs = share_obs
-                self.avail_acts = avail_acts
-                self.buffer.insert(n_rollout_threads,
-                                   step_obs,
-                                   step_share_obs,
-                                   step_acts,
-                                   step_rewards,
-                                   step_next_obs,
-                                   step_next_share_obs,
-                                   step_dones,
-                                   step_dones_env,
-                                   step_avail_acts,
-                                   step_next_avail_acts)
-            # train
-            if training_episode:
-                self.total_env_steps += n_rollout_threads
-                if (self.last_train_T == 0 or ((self.total_env_steps - self.last_train_T) / self.train_interval) >= 1):
-                    self.train()
-                    self.total_train_steps += 1
-                    self.last_train_T = self.total_env_steps
-
-        average_step_reward = np.mean(episode_rewards)
-
-        return average_step_reward, battles_won
-
-    # for hide and seek
-    def shared_collect_rollout_cent(self, explore=True, training_episode=True, warmup=False):
-        p_id = "policy_0"
-        policy = self.policies[p_id]
-
-        env = self.env if explore else self.eval_env
-        n_rollout_threads = self.num_envs if explore else self.num_eval_envs
-
-        need_to_reset = True
-
-        while need_to_reset:
-            success = 0.0
-            trials = 0.0
-            discard_episode = 0
-
-            if not explore:
-                obs, share_obs, _ = env.reset()
-            else:
-                need_to_reset = False
-                if self.finish_first_train_reset:
-                    obs = self.obs
-                    share_obs = self.share_obs
-                else:
-                    obs, share_obs, _ = env.reset()
-                    self.finish_first_train_reset = True
-
-            # init
-            episode_rewards = []
-            step_obs = {}
-            step_share_obs = {}
-            step_acts = {}
-            step_rewards = {}
-            step_next_obs = {}
-            step_next_share_obs = {}
-            step_dones = {}
-            step_dones_env = {}
-            step_avail_acts = {}
-            step_next_avail_acts = {}
-
-            for step in range(self.episode_length):
-                obs_batch = np.concatenate(obs)
-                # get actions for all agents to step the env
-                if warmup:
-                    # completely random actions in pre-training warmup phase
-                    acts_batch = policy.get_random_actions(obs_batch)
-                else:
-                    # get actions with exploration noise (eps-greedy/Gaussian)
-                    if self.algorithm_name == "masac":
-                        acts_batch, _ = policy.get_actions(
-                            obs_batch, sample=explore)
-                    else:
-                        acts_batch, _ = policy.get_actions(obs_batch,
-                                                           t_env=self.total_env_steps,
-                                                           explore=explore,
-                                                           use_target=False,
-                                                           use_gumbel=False)
-                # update rnn hidden state
-                if not isinstance(acts_batch, np.ndarray):
-                    acts_batch = acts_batch.detach().numpy()
-                env_acts = np.split(acts_batch, n_rollout_threads)
-
-                # env step and store the relevant episode information
-                next_obs, next_share_obs, rewards, dones, infos, _ = env.step(
-                    env_acts)
-                episode_rewards.append(rewards)
-                dones_env = np.all(dones, axis=1)
-
-                for i in range(n_rollout_threads):
-                    if dones_env[i]:
-                        if 'discard_episode' in infos[i].keys():
-                            if infos[i]['discard_episode']:
-                                discard_episode += 1
-                            else:
-                                trials += 1
-                        else:
-                            trials += 1
-                        if 'success' in infos[i].keys():
-                            if infos[i]['success']:
-                                success += 1
-
-                if explore and n_rollout_threads == 1 and np.all(dones_env):
-                    next_obs, next_share_obs, _ = env.reset()
-
-                if not explore and np.any(dones_env):
-
-                    assert n_rollout_threads == 1, (
-                        "only support one env for the evaluation in hide and seek domain. ")
-
-                    if trials < 1:
-                        need_to_reset = True
-                        break
-                    else:
-                        need_to_reset = False
-                        average_step_reward = np.mean(episode_rewards)
-                        return average_step_reward, success
-
-                step_obs[p_id] = obs
-                step_share_obs[p_id] = share_obs
-                step_acts[p_id] = env_acts
-                step_rewards[p_id] = rewards
-                step_next_obs[p_id] = next_obs
-                step_next_share_obs[p_id] = next_share_obs
-                step_dones[p_id] = np.zeros_like(dones)
-                step_dones_env[p_id] = dones_env
-                step_avail_acts[p_id] = None
-                step_next_avail_acts[p_id] = None
-
-                obs = next_obs
-                share_obs = next_share_obs
-
-                if explore:
-                    self.obs = obs
-                    self.share_obs = share_obs
-                    # push all episodes collected in this rollout step to the buffer
-                    self.buffer.insert(n_rollout_threads,
-                                       step_obs,
-                                       step_share_obs,
-                                       step_acts,
-                                       step_rewards,
-                                       step_next_obs,
-                                       step_next_share_obs,
-                                       step_dones,
-                                       step_dones_env,
-                                       step_avail_acts,
-                                       step_next_avail_acts)
-                # train
-                if training_episode:
-                    self.total_env_steps += n_rollout_threads
-                    if (self.last_train_T == 0 or ((self.total_env_steps - self.last_train_T) / self.train_interval) >= 1):
-                        self.train()
-                        self.total_train_steps += 1
-                        self.last_train_T = self.total_env_steps
-
-        average_step_reward = np.mean(episode_rewards)
-
-        success_rate = success/trials if trials > 0 else 0.0
-
-        return average_step_reward, success_rate
-
-    # for mpe-simple_spread and mpe-simple_reference
-    def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
-        p_id = "policy_0"
-        policy = self.policies[p_id]
-
-        env = self.env if explore else self.eval_env
-        n_rollout_threads = self.num_envs if explore else self.num_eval_envs
-
-        if not explore:
-            obs = env.reset()
-            share_obs = obs.reshape(n_rollout_threads, -1)
-        else:
-            if self.finish_first_train_reset:
-                obs = self.obs
-                share_obs = self.share_obs
-            else:
-                obs = env.reset()
-                share_obs = obs.reshape(n_rollout_threads, -1)
-                self.finish_first_train_reset = True
-
-        # init
-        episode_rewards = []
-        step_obs = {}
-        step_share_obs = {}
-        step_acts = {}
-        step_rewards = {}
-        step_next_obs = {}
-        step_next_share_obs = {}
-        step_dones = {}
-        step_dones_env = {}
-        step_avail_acts = {}
-        step_next_avail_acts = {}
-
-        for step in range(self.episode_length):
-            obs_batch = np.concatenate(obs)
-            # get actions for all agents to step the env
-            if warmup:
-                # completely random actions in pre-training warmup phase
-                acts_batch = policy.get_random_actions(obs_batch)
-            else:
-                # get actions with exploration noise (eps-greedy/Gaussian)
-                if self.algorithm_name == "masac":
-                    acts_batch, _ = policy.get_actions(
-                        obs_batch, sample=explore)
-                else:
-                    acts_batch, _ = policy.get_actions(obs_batch,
-                                                       t_env=self.total_env_steps,
-                                                       explore=explore,
-                                                       use_target=False,
-                                                       use_gumbel=False)
-
-            if not isinstance(acts_batch, np.ndarray):
-                acts_batch = acts_batch.detach().numpy()
-            env_acts = np.split(acts_batch, n_rollout_threads)
-
-            # env step and store the relevant episode information
-            next_obs, rewards, dones, infos = env.step(env_acts)
-
-            episode_rewards.append(rewards)
-            dones_env = np.all(dones, axis=1)
-
-            if explore and n_rollout_threads == 1 and np.all(dones_env):
-                next_obs = env.reset()
-
-            if not explore and np.all(dones_env):
-                average_step_reward = np.mean(episode_rewards)
-                return average_step_reward, None
-
-            next_share_obs = next_obs.reshape(n_rollout_threads, -1)
-
-            step_obs[p_id] = obs
-            step_share_obs[p_id] = share_obs
-            step_acts[p_id] = env_acts
-            step_rewards[p_id] = rewards
-            step_next_obs[p_id] = next_obs
-            step_next_share_obs[p_id] = next_share_obs
-            step_dones[p_id] = np.zeros_like(dones)
-            step_dones_env[p_id] = dones_env
-            step_avail_acts[p_id] = None
-            step_next_avail_acts[p_id] = None
-
-            obs = next_obs
-            share_obs = next_share_obs
-
-            if explore:
-                self.obs = obs
-                self.share_obs = share_obs
-                # push all episodes collected in this rollout step to the buffer
-                self.buffer.insert(n_rollout_threads,
-                                   step_obs,
-                                   step_share_obs,
-                                   step_acts,
-                                   step_rewards,
-                                   step_next_obs,
-                                   step_next_share_obs,
-                                   step_dones,
-                                   step_dones_env,
-                                   step_avail_acts,
-                                   step_next_avail_acts)
-
-            # train
-            if training_episode:
-                self.total_env_steps += n_rollout_threads
-                if (self.last_train_T == 0 or ((self.total_env_steps - self.last_train_T) / self.train_interval) >= 1):
-                    self.train()
-                    self.total_train_steps += 1
-                    self.last_train_T = self.total_env_steps
-
-        average_step_reward = np.mean(episode_rewards)
-
-        return average_step_reward, None
-
-    # for mpe-simple_speaker_listener
-    def separated_collect_rollout(self, explore=True, training_episode=True, warmup=False):
-        env = self.env if explore else self.eval_env
-        n_rollout_threads = self.num_envs if explore else self.num_eval_envs
-
-        if not explore:
-            obs = env.reset()
-            share_obs = []
-            for o in obs:
-                share_obs.append(list(chain(*o)))
-            share_obs = np.array(share_obs)
-        else:
-            if self.finish_first_train_reset:
-                obs = self.obs
-                share_obs = self.share_obs
-            else:
-                obs = env.reset()
-                share_obs = []
-                for o in obs:
-                    share_obs.append(list(chain(*o)))
-                share_obs = np.array(share_obs)
-                self.finish_first_train_reset = True
-
-        agent_obs = []
-        for agent_id in range(self.num_agents):
-            env_obs = []
-            for o in obs:
-                env_obs.append(o[agent_id])
-            env_obs = np.array(env_obs)
-            agent_obs.append(env_obs)
-
-        # [agents, parallel envs, dim]
-        episode_rewards = []
-        step_obs = {}
-        step_share_obs = {}
-        step_acts = {}
-        step_rewards = {}
-        step_next_obs = {}
-        step_next_share_obs = {}
-        step_dones = {}
-        step_dones_env = {}
-        step_avail_acts = {}
-        step_next_avail_acts = {}
-
-        acts = []
-        for p_id in self.policy_ids:
-            if is_multidiscrete(self.policy_info[p_id]['act_space']):
-                self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
-            else:
-                self.sum_act_dim = self.policy_act_dim[p_id]
-            temp_act = np.zeros((n_rollout_threads, self.sum_act_dim))
-            acts.append(temp_act)
-
-        for step in range(self.episode_length):
-            for agent_id, p_id in zip(self.agent_ids, self.policy_ids):
-                policy = self.policies[p_id]
-                # get actions for all agents to step the env
-                if warmup:
-                    # completely random actions in pre-training warmup phase
-                    # [parallel envs, agents, dim]
-                    act = policy.get_random_actions(agent_obs[agent_id])
-                else:
-                    # get actions with exploration noise (eps-greedy/Gaussian)
-                    if self.algorithm_name == "masac":
-                        act, _ = policy.get_actions(
-                            agent_obs[agent_id], sample=explore)
-                    else:
-                        act, _ = policy.get_actions(agent_obs[agent_id],
-                                                    t_env=self.total_env_steps,
-                                                    explore=explore,
-                                                    use_target=False,
-                                                    use_gumbel=False)
-
-                if not isinstance(act, np.ndarray):
-                    act = act.detach().numpy()
-                acts[agent_id] = act
-
-            env_acts = []
-            for i in range(n_rollout_threads):
-                env_act = []
-                for agent_id in range(self.num_agents):
-                    env_act.append(acts[agent_id][i])
-                env_acts.append(env_act)
-
-            # env step and store the relevant episode information
-            next_obs, rewards, dones, infos = env.step(env_acts)
-
-            episode_rewards.append(rewards)
-            dones_env = np.all(dones, axis=1)
-
-            if explore and n_rollout_threads == 1 and np.all(dones_env):
-                next_obs = env.reset()
-
-            if not explore and np.all(dones_env):
-                average_step_reward = np.mean(episode_rewards)
-                return average_step_reward, None
-
-            next_share_obs = []
-            for no in next_obs:
-                next_share_obs.append(list(chain(*no)))
-            next_share_obs = np.array(next_share_obs)
-
-            next_agent_obs = []
-            for agent_id in range(n_rollout_threads):
-                next_env_obs = []
-                for no in next_obs:
-                    next_env_obs.append(no[agent_id])
-                next_env_obs = np.array(next_env_obs)
-                next_agent_obs.append(next_env_obs)
-
-            for agent_id, p_id in zip(self.agent_ids, self.policy_ids):
-                step_obs[p_id] = np.expand_dims(agent_obs[agent_id], axis=1)
-                step_share_obs[p_id] = share_obs
-                step_acts[p_id] = np.expand_dims(acts[agent_id], axis=1)
-                step_rewards[p_id] = np.expand_dims(
-                    rewards[:, agent_id], axis=1)
-                step_next_obs[p_id] = np.expand_dims(
-                    next_agent_obs[agent_id], axis=1)
-                step_next_share_obs[p_id] = next_share_obs
-                step_dones[p_id] = np.zeros_like(
-                    np.expand_dims(dones[:, agent_id], axis=1))
-                step_dones_env[p_id] = dones_env
-                step_avail_acts[p_id] = None
-                step_next_avail_acts[p_id] = None
-
-            obs = next_obs
-            agent_obs = next_agent_obs
-            share_obs = next_share_obs
-
-            if self.explore:
-                self.obs = obs
-                self.share_obs = share_obs
-                self.buffer.insert(n_rollout_threads,
-                                   step_obs,
-                                   step_share_obs,
-                                   step_acts,
-                                   step_rewards,
-                                   step_next_obs,
-                                   step_next_share_obs,
-                                   step_dones,
-                                   step_dones_env,
-                                   step_avail_acts,
-                                   step_next_avail_acts)
-
-            # train
-            if training_episode:
-                self.total_env_steps += n_rollout_threads
-                if (self.last_train_T == 0 or ((self.total_env_steps - self.last_train_T) / self.train_interval) >= 1):
-                    self.train()
-                    self.total_train_steps += 1
-                    self.last_train_T = self.total_env_steps
-
-        average_step_reward = np.mean(episode_rewards)
-
-        return average_step_reward, None
 
     def log_stats(self, policy_id, stats, t_env):
         # unpack the statistics
