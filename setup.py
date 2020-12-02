@@ -6,11 +6,11 @@ from setuptools import setup, find_packages
 
 def get_version() -> str:
     # https://packaging.python.org/guides/single-sourcing-package-version/
-    init = open(os.path.join("onpolicy", "__init__.py"), "r").read().split()
+    init = open(os.path.join("offpolicy", "__init__.py"), "r").read().split()
     return init[init.index("__version__") + 2][1:-1]
 
 setup(
-    name="onpolicy",  # Replace with your own username
+    name="offpolicy",  # Replace with your own username
     version=get_version(),
     description="off-policy algorithms of marlbenchmark",
     long_description=open("README.md", encoding="utf8").read(),
