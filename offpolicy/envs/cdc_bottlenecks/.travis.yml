@@ -1,0 +1,61 @@
+language: python
+
+cache: pip
+
+python:
+  - "3.5"
+
+os: linux
+
+dist: trusty
+
+sudo: required
+
+git:
+  depth: 1
+
+before_install:
+  # install and run pep8 and docstyle tests
+  - pip install pydocstyle
+  - pydocstyle --convention numpy
+  - pip install flake8 .
+  - flake8 --version
+  - flake8 --show-source
+
+  # Setup conda (needed for opencv, ray dependency)
+  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
+  - bash miniconda.sh -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - export TEST_FLAG="True"
+
+  # Set up requirements for flow
+  - conda env create -f environment.yml
+  - source activate flow
+
+  # [sumo] dependencies and binaries
+  - pushd $HOME/build/flow-project
+  -     ./flow/scripts/setup_sumo_ubuntu1404.sh
+  - popd
+  - source ~/.bashrc
+
+  # [aimsun] install the conda env and update the path to the env
+  - pushd $HOME/build/flow-project
+  -     ./flow/scripts/setup_aimsun.sh
+  - popd
+  - source ~/.bashrc
+  - sed -i 's/\/path\/to\/envs\/aimsun_flow/\/home\/travis\/miniconda\/envs\/aimsun_flow/g' flow/config.py
+
+  - ls ../
+
+install:
+  - pip install coveralls
+  - pip install nose
+  - pip install matplotlib
+  - pip install jupyter
+
+script:
+  - python setup.py install
+  - xvfb-run --server-args="-screen 0 1024x768x24"  nose2 --with-coverage
+
+after_success:
+  - coveralls
