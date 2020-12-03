@@ -186,11 +186,9 @@ class RecRunner(object):
     def run(self):
         # collect data
         self.trainer.prep_rollout()
-        train_episode_reward, train_metric = self.collecter(
-            explore=True, training_episode=True, warmup=False)
-
-        self.train_episode_rewards.append(train_episode_reward)
-        self.train_metrics.append(train_metric)
+        env_info = self.collecter(explore=True, training_episode=True, warmup=False)
+        for k, v in env_info.items():
+            self.eval_infos[k].append(v)
 
         # train
         if ((self.num_episodes_collected - self.last_train_episode) / self.train_interval_episode) >= 1 or self.last_train_episode == 0:
@@ -329,36 +327,29 @@ class RecRunner(object):
         warmup_rewards = []
         print("warm up...")
         for _ in range((num_warmup_episodes // self.num_envs) + 1):
-            reward, _ = self.collecter(
-                explore=True, training_episode=False, warmup=True)
-            warmup_rewards.append(reward)
+            env_info = self.collecter(explore=True, training_episode=False, warmup=True)
+            warmup_rewards.append(env_info['episode_rewards'])
         warmup_reward = np.mean(warmup_rewards)
-        print("warmup average episode rewards: ", warmup_reward)
+        print("warmup average episode rewards: {}".format(warmup_reward))
 
     def eval(self):
         self.trainer.prep_rollout()
 
-        eval_episode_rewards = []
-        eval_metrics = []
+        eval_infos = {}
+        eval_infos['success_rate'] = []
+        eval_infos['average_episode_rewards'] = []
 
         for _ in range(self.args.num_eval_episodes):
-            eval_episode_reward, eval_metric = self.collecter(
-                explore=False, training_episode=False, warmup=False)
-            eval_episode_rewards.append(eval_episode_reward)
-            eval_metrics.append(eval_metric)
+            env_info = self.collecter( explore=False, training_episode=False, warmup=False)
+            
+            for k, v in env_info.items():
+                eval_infos[k].append(v)
 
-        average_episode_reward = np.mean(eval_episode_rewards)
-        print("eval average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'eval_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("eval_average_episode_rewards", {
-                                     'eval_average_episode_rewards': average_episode_reward}, self.total_env_steps)
+        self.log_env(eval_infos, suffix="eval_")
 
-        self.log_env(eval_metrics, suffix="eval")
-
+    @torch.no_grad()
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        env_info = {}
         p_id = "policy_0"
         policy = self.policies[p_id]
 
@@ -371,15 +362,13 @@ class RecRunner(object):
 
             obs, share_obs, _ = env.reset()
 
-            recurrent_hidden_states_batch = np.zeros(
-                (self.num_envs * len(self.policy_agents[p_id]), self.hidden_size))
+            rnn_states_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.hidden_size)dtype=np.float32)
             if is_multidiscrete(self.policy_info[p_id]['act_space']):
                 self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
             else:
                 self.sum_act_dim = self.policy_act_dim[p_id]
 
-            last_acts_batch = np.zeros(
-                (self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim))
+            last_acts_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
 
             # init
             episode_obs = {}
@@ -394,20 +383,14 @@ class RecRunner(object):
             episode_next_avail_acts = {}
             accumulated_rewards = {}
 
-            episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape))
-            episode_share_obs[p_id] = np.zeros(
-                (self.episode_length, *share_obs.shape))
-            episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(
-                self.policy_agents[p_id]), self.sum_act_dim))
-            episode_rewards[p_id] = np.zeros(
-                (self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1))
+            episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape), dtype=np.float32)
+            episode_share_obs[p_id] = np.zeros((self.episode_length, *share_obs.shape), dtype=np.float32)
+            episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
+            episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
             episode_next_obs[p_id] = np.zeros_like(episode_obs[p_id])
-            episode_next_share_obs[p_id] = np.zeros_like(
-                episode_share_obs[p_id])
-            episode_dones[p_id] = np.ones(
-                (self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1))
-            episode_dones_env[p_id] = np.ones(
-                (self.episode_length, self.num_envs, 1))
+            episode_next_share_obs[p_id] = np.zeros_like(episode_share_obs[p_id])
+            episode_dones[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
+            episode_dones_env[p_id] = np.ones((self.episode_length, self.num_envs, 1), dtype=np.float32)
             episode_avail_acts[p_id] = None
             episode_next_avail_acts[p_id] = None
             accumulated_rewards[p_id] = []
@@ -422,44 +405,40 @@ class RecRunner(object):
                     # completely random actions in pre-training warmup phase
                     acts_batch = policy.get_random_actions(obs_batch)
                     # get new rnn hidden state
-                    _, recurrent_hidden_states_batch, _ = policy.get_actions(obs_batch,
-                                                                             last_acts_batch,
-                                                                             recurrent_hidden_states_batch)
+                    _, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                last_acts_batch,
+                                                                rnn_states_batch)
 
                 else:
                     # get actions with exploration noise (eps-greedy/Gaussian)
                     if self.algorithm_name == "rmasac":
-                        acts_batch, recurrent_hidden_states_batch, _ = policy.get_actions(obs_batch,
-                                                                                          last_acts_batch,
-                                                                                          recurrent_hidden_states_batch,
-                                                                                          sample=explore)
+                        acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                            last_acts_batch,
+                                                                            rnn_states_batch,
+                                                                            sample=explore)
                     else:
-                        acts_batch, recurrent_hidden_states_batch, _ = policy.get_actions(obs_batch,
-                                                                                          last_acts_batch,
-                                                                                          recurrent_hidden_states_batch,
-                                                                                          t_env=self.total_env_steps,
-                                                                                          explore=explore,
-                                                                                          use_target=False,
-                                                                                          use_gumbel=False)
+                        acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                            last_acts_batch,
+                                                                            rnn_states_batch,
+                                                                            t_env=self.total_env_steps,
+                                                                            explore=explore,
+                                                                            use_target=False,
+                                                                            use_gumbel=False)
                 # update rnn hidden state
-                recurrent_hidden_states_batch = recurrent_hidden_states_batch.detach().numpy()
+                rnn_states_batch = rnn_states_batch.detach().numpy()
                 if not isinstance(acts_batch, np.ndarray):
                     acts_batch = acts_batch.detach().numpy()
                 last_acts_batch = acts_batch
                 env_acts = np.split(acts_batch, self.num_envs)
 
                 # env step and store the relevant episode information
-                next_obs, next_share_obs, rewards, dones, infos, _ = env.step(
-                    env_acts)
+                next_obs, next_share_obs, rewards, dones, infos, _ = env.step(env_acts)
                 t += 1
                 assert self.num_envs == 1, ("only one env is support here.")
                 env_t += self.num_envs
 
                 dones_env = np.all(dones, axis=1)
-                terminate_episodes = np.any(
-                    dones_env) or t == self.episode_length
-                # if terminate_episodes:
-                #    dones_env = np.ones_like(dones_env).astype(bool)
+                terminate_episodes = np.any(dones_env) or t == self.episode_length
 
                 for i in range(self.num_envs):
                     if 'discard_episode' in infos[i].keys():
@@ -485,8 +464,7 @@ class RecRunner(object):
                 if terminate_episodes:
                     for i in range(self.num_envs):
                         if 'success' in infos[i].keys():
-                            if infos[i]['success']:  # take one agent
-                                success += 1
+                            env_info['success_rate'] = 1 if infos[i]['success'] else 0
                     break
 
             if discard_episode == 0:
@@ -510,10 +488,10 @@ class RecRunner(object):
                 else:
                     success_to_collect_one_episode = True
 
-        average_episode_reward = np.mean(
-            np.sum(accumulated_rewards[p_id], axis=0))
+        average_episode_rewards = np.mean(np.sum(accumulated_rewards[p_id], axis=0))
+        env_info['average_episode_rewards'] = average_episode_rewards
 
-        return average_episode_reward, success
+        return env_info
 
     def log(self):
         end = time.time()
@@ -527,33 +505,26 @@ class RecRunner(object):
         for p_id, train_info in zip(self.policy_ids, self.train_infos):
             self.log_train(p_id, train_info)
 
-        average_episode_reward = np.mean(self.train_episode_rewards)
-        print("train average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'train_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("train_average_episode_rewards", {
-                                     'train_average_episode_rewards': average_episode_reward}, self.total_env_steps)
-
-        self.log_env(self.train_metrics)
+        self.log_env(self.env_infos)
         self.log_clear()
 
-    def log_env(self, metrics, suffix="train"):
-        if len(metrics) > 0:
-            if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
-                metric = np.mean(metrics)
-                print(suffix + " success rate is " + str(metric))
-                if self.use_wandb:
-                    wandb.log({suffix + '_success_rate': metric},
-                              step=self.total_env_steps)
-                else:
-                    self.writter.add_scalars(
-                        suffix + '_success_rate', {suffix + '_success_rate': metric}, self.total_env_steps)
+    def log_env(self, env_info, suffix="train"):
+        if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
+            for k, v in env_info:
+                if len(v) > 0:
+                    v = np.mean(v)
+                    suffix_k = k if suffix is None else suffix + k 
+                    print(suffix_k + " is " + str(v))
+                    if self.use_wandb:
+                        wandb.log({suffix_k: v}, step=self.total_env_steps)
+                    else:
+                        self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_clear(self):
-        self.train_episode_rewards = []
-        self.train_metrics = []
+        self.env_infos = {}
+
+        self.env_infos['average_episode_rewards'] = []
+        self.env_infos['success_rate'] = []
 
     def log_train(self, policy_id, train_info):
         for k, v in train_info.items():

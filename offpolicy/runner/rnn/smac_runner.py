@@ -9,7 +9,6 @@ import time
 from offpolicy.utils.rec_buffer import RecReplayBuffer, PrioritizedRecReplayBuffer
 from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
 
-
 class RecRunner(object):
 
     def __init__(self, config):
@@ -112,13 +111,11 @@ class RecRunner(object):
             from offpolicy.algorithms.r_matd3.algorithm.rMATD3Policy import R_MATD3Policy as Policy
             from offpolicy.algorithms.r_matd3.r_matd3 import R_MATD3 as TrainAlgo
         elif self.algorithm_name == "rmaddpg":
-            assert self.actor_train_interval_step == 1, (
-                "rmaddpg only support actor_train_interval_step=1.")
+            assert self.actor_train_interval_step == 1, ("rmaddpg only support actor_train_interval_step=1.")
             from offpolicy.algorithms.r_maddpg.algorithm.rMADDPGPolicy import R_MADDPGPolicy as Policy
             from offpolicy.algorithms.r_maddpg.r_maddpg import R_MADDPG as TrainAlgo
         elif self.algorithm_name == "rmasac":
-            assert self.actor_train_interval_step == 1, (
-                "rmasac only support actor_train_interval_step=1.")
+            assert self.actor_train_interval_step == 1, ("rmasac only support actor_train_interval_step=1.")
             from offpolicy.algorithms.r_masac.algorithm.rMASACPolicy import R_MASACPolicy as Policy
             from offpolicy.algorithms.r_masac.r_masac import R_MASAC as TrainAlgo
         elif self.algorithm_name == "qmix":
@@ -144,16 +141,12 @@ class RecRunner(object):
         self.trainer = TrainAlgo(self.args, self.num_agents, self.policies, self.policy_mapping_fn,
                                  device=self.device, episode_length=self.episode_length)
 
-        self.policy_agents = {policy_id: sorted(
-            [agent_id for agent_id in self.agent_ids if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
+        self.policy_agents = {policy_id: sorted( [agent_id for agent_id in self.agent_ids if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
 
-        self.policy_obs_dim = {
-            policy_id: self.policies[policy_id].obs_dim for policy_id in self.policy_ids}
-        self.policy_act_dim = {
-            policy_id: self.policies[policy_id].act_dim for policy_id in self.policy_ids}
-        self.policy_central_obs_dim = {
-            policy_id: self.policies[policy_id].central_obs_dim for policy_id in self.policy_ids}
+        self.policy_obs_dim = {policy_id: self.policies[policy_id].obs_dim for policy_id in self.policy_ids}
+        self.policy_act_dim = {policy_id: self.policies[policy_id].act_dim for policy_id in self.policy_ids}
+        self.policy_central_obs_dim = {policy_id: self.policies[policy_id].central_obs_dim for policy_id in self.policy_ids}
 
         num_train_episodes = (self.num_env_steps / self.episode_length) / (self.train_interval_episode)
         self.beta_anneal = DecayThenFlatSchedule(self.per_beta_start, 1.0, num_train_episodes, decay="linear")
@@ -185,10 +178,9 @@ class RecRunner(object):
     def run(self):
         # collect data
         self.trainer.prep_rollout()
-        train_episode_reward, train_metric = self.collecter(explore=True, training_episode=True, warmup=False)
-
-        self.train_episode_rewards.append(train_episode_reward)
-        self.train_metrics.append(train_metric)
+        env_info = self.collecter(explore=True, training_episode=True, warmup=False)
+        for k, v in env_info.items():
+            self.eval_infos[k].append(v)
 
         # train
         if ((self.num_episodes_collected - self.last_train_episode) / self.train_interval_episode) >= 1 or self.last_train_episode == 0:
@@ -249,7 +241,6 @@ class RecRunner(object):
         update_popart = ((self.total_train_steps % self.popart_update_interval_step) == 0)
         # gradient updates
         self.train_infos = []
-
         for p_id in self.policy_ids:
             if self.use_per:
                 beta = self.beta_anneal.eval(self.total_train_steps)
@@ -320,61 +311,50 @@ class RecRunner(object):
             
         policy_mixer_state_dict = torch.load(str(self.model_dir) + '/mixer.pt')
         self.trainer.mixer.load_state_dict(policy_mixer_state_dict)
-
+   
     def warmup(self, num_warmup_episodes):
         # fill replay buffer with enough episodes to begin training
         self.trainer.prep_rollout()
         warmup_rewards = []
         print("warm up...")
         for _ in range((num_warmup_episodes // self.num_envs) + 1):
-            reward, _ = self.collecter(
-                explore=True, training_episode=False, warmup=True)
-            warmup_rewards.append(reward)
+            env_info = self.collecter(explore=True, training_episode=False, warmup=True)
+            warmup_rewards.append(env_info['episode_rewards'])
         warmup_reward = np.mean(warmup_rewards)
-        print("warmup average episode rewards: ", warmup_reward)
-
+        print("warmup average episode rewards: {}".format(warmup_reward))
+    
     def eval(self):
         self.trainer.prep_rollout()
 
-        eval_episode_rewards = []
-        eval_metrics = []
+        eval_infos = {}
+        eval_infos['win_rate'] = []
+        eval_infos['average_episode_rewards'] = []
 
         for _ in range(self.args.num_eval_episodes):
-            eval_episode_reward, eval_metric = self.collecter(
-                explore=False, training_episode=False, warmup=False)
-            eval_episode_rewards.append(eval_episode_reward)
-            eval_metrics.append(eval_metric)
+            env_info = self.collecter(explore=False, training_episode=False, warmup=False)
+            
+            for k, v in env_info.items():
+                eval_infos[k].append(v)
 
-        average_episode_reward = np.mean(eval_episode_rewards)
-        print("eval average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'eval_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("eval_average_episode_rewards", {
-                                     'eval_average_episode_rewards': average_episode_reward}, self.total_env_steps)
-
-        self.log_env(eval_metrics, suffix="eval")
-
+        self.log_env(eval_infos, suffix="eval_")
+    
+    @torch.no_grad()
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        env_info = {}
         p_id = "policy_0"
         policy = self.policies[p_id]
 
         env = self.env if training_episode or warmup else self.eval_env
 
-        battles_won = 0
-
         obs, share_obs, avail_acts = env.reset()
 
-        recurrent_hidden_states_batch = np.zeros(
-            (self.num_envs * len(self.policy_agents[p_id]), self.hidden_size))
+        rnn_states_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.hidden_size), dtype=np.float32)
         if is_multidiscrete(self.policy_info[p_id]['act_space']):
             self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
         else:
             self.sum_act_dim = self.policy_act_dim[p_id]
 
-        last_acts_batch = np.zeros(
-            (self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim))
+        last_acts_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
 
         # init
         episode_obs = {}
@@ -389,20 +369,15 @@ class RecRunner(object):
         episode_next_avail_acts = {}
         accumulated_rewards = {}
 
-        episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape))
-        episode_share_obs[p_id] = np.zeros(
-            (self.episode_length, *share_obs.shape))
-        episode_acts[p_id] = np.zeros((self.episode_length, *avail_acts.shape))
-        episode_rewards[p_id] = np.zeros(
-            (self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1))
+        episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape), dtype=np.float32)
+        episode_share_obs[p_id] = np.zeros((self.episode_length, *share_obs.shape), dtype=np.float32)
+        episode_acts[p_id] = np.zeros((self.episode_length, *avail_acts.shape), dtype=np.float32)
+        episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
         episode_next_obs[p_id] = np.zeros_like(episode_obs[p_id])
         episode_next_share_obs[p_id] = np.zeros_like(episode_share_obs[p_id])
-        episode_dones[p_id] = np.ones(
-            (self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1))
-        episode_dones_env[p_id] = np.ones(
-            (self.episode_length, self.num_envs, 1))
-        episode_avail_acts[p_id] = np.ones(
-            (self.episode_length, *avail_acts.shape))
+        episode_dones[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
+        episode_dones_env[p_id] = np.ones((self.episode_length, self.num_envs, 1), dtype=np.float32)
+        episode_avail_acts[p_id] = np.ones((self.episode_length, *avail_acts.shape), dtype=np.float32)
         episode_next_avail_acts[p_id] = np.ones_like(episode_avail_acts[p_id])
         accumulated_rewards[p_id] = []
 
@@ -414,41 +389,39 @@ class RecRunner(object):
             # get actions for all agents to step the env
             if warmup:
                 # completely random actions in pre-training warmup phase
-                acts_batch = policy.get_random_actions(
-                    obs_batch, avail_acts_batch)
+                acts_batch = policy.get_random_actions(obs_batch, avail_acts_batch)
                 # get new rnn hidden state
-                _, recurrent_hidden_states_batch, _ = policy.get_actions(obs_batch,
-                                                                         last_acts_batch,
-                                                                         recurrent_hidden_states_batch,
-                                                                         avail_acts_batch)
+                _, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                            last_acts_batch,
+                                                            rnn_states_batch,
+                                                            avail_acts_batch)
 
             else:
                 # get actions with exploration noise (eps-greedy/Gaussian)
                 if self.algorithm_name == "rmasac":
-                    acts_batch, recurrent_hidden_states_batch, _ = policy.get_actions(obs_batch,
-                                                                                      last_acts_batch,
-                                                                                      recurrent_hidden_states_batch,
-                                                                                      avail_acts_batch,
-                                                                                      sample=explore)
+                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                        last_acts_batch,
+                                                                        rnn_states_batch,
+                                                                        avail_acts_batch,
+                                                                        sample=explore)
                 else:
-                    acts_batch, recurrent_hidden_states_batch, _ = policy.get_actions(obs_batch,
-                                                                                      last_acts_batch,
-                                                                                      recurrent_hidden_states_batch,
-                                                                                      avail_acts_batch,
-                                                                                      t_env=self.total_env_steps,
-                                                                                      explore=explore,
-                                                                                      use_target=False,
-                                                                                      use_gumbel=False)
+                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                        last_acts_batch,
+                                                                        rnn_states_batch,
+                                                                        avail_acts_batch,
+                                                                        t_env=self.total_env_steps,
+                                                                        explore=explore,
+                                                                        use_target=False,
+                                                                        use_gumbel=False)
             # update rnn hidden state
-            recurrent_hidden_states_batch = recurrent_hidden_states_batch.detach().numpy()
+            rnn_states_batch = rnn_states_batch.detach().numpy()
             if not isinstance(acts_batch, np.ndarray):
                 acts_batch = acts_batch.detach().numpy()
             last_acts_batch = acts_batch
             env_acts = np.split(acts_batch, self.num_envs)
 
             # env step and store the relevant episode information
-            next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(
-                env_acts)
+            next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(env_acts)
             t += 1
             if training_episode:
                 self.total_env_steps += self.num_envs
@@ -480,8 +453,8 @@ class RecRunner(object):
             if terminate_episodes:
                 for i in range(self.num_envs):
                     if 'won' in infos[i][0].keys():
-                        if infos[i][0]['won']:  # take one agent
-                            battles_won += 1
+                        # take one agent
+                        env_info['win_rate'] = 1 if infos[i][0]['won'] else 0
                 break
 
         if explore:
@@ -499,18 +472,9 @@ class RecRunner(object):
                                episode_avail_acts,
                                episode_next_avail_acts)
 
-        if ((self.total_env_steps - self.last_log_T) / self.log_interval) >= 1:
-            wandb.log({str(p_id) + '/min_episode_share_obs': np.array(
-                episode_share_obs[p_id]).min()}, step=self.total_env_steps)
-            wandb.log({str(p_id) + '/max_episode_share_obs': np.array(
-                episode_share_obs[p_id]).max()}, step=self.total_env_steps)
-            wandb.log({str(p_id) + '/mean_episode_share_obs': np.array(
-                episode_share_obs[p_id]).mean()}, step=self.total_env_steps)
+        env_info['average_episode_rewards'] = np.mean(np.sum(accumulated_rewards[p_id], axis=0))
 
-        average_episode_reward = np.mean(
-            np.sum(accumulated_rewards[p_id], axis=0))
-
-        return average_episode_reward, battles_won
+        return env_info
 
     def log(self):
         end = time.time()
@@ -525,30 +489,25 @@ class RecRunner(object):
         for p_id, train_info in zip(self.policy_ids, self.train_infos):
             self.log_train(p_id, train_info)
 
-        average_episode_reward = np.mean(self.train_episode_rewards)
-        print("train average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'train_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("train_average_episode_rewards", {
-                                     'train_average_episode_rewards': average_episode_reward}, self.total_env_steps)
-
-        self.log_env(self.train_metrics)
+        self.log_env(self.env_infos)
         self.log_clear()
 
-    def log_env(self, metrics, suffix="train"):
-        if len(metrics) > 0:
-            metric = np.mean(metrics)
-            print(suffix + " win rate is " + str(metric))
-            if self.use_wandb:
-                wandb.log({suffix + '_win_rate': metric}, step=self.total_env_steps)
-            else:
-                self.writter.add_scalars(suffix + '_win_rate', {suffix + '_win_rate': metric}, self.total_env_steps)
+    def log_env(self, env_info, suffix=None):
+        for k, v in env_info:
+            if len(v) > 0:
+                v = np.mean(v)
+                suffix_k = k if suffix is None else suffix + k 
+                print(suffix_k + " is " + str(v))
+                if self.use_wandb:
+                    wandb.log({suffix_k: v}, step=self.total_env_steps)
+                else:
+                    self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_clear(self):
-        self.train_episode_rewards = []
-        self.train_metrics = []
+        self.env_infos = {}
+
+        self.env_infos['average_episode_rewards'] = []
+        self.env_infos['win_rate'] = []
 
     def log_train(self, policy_id, train_info):
         for k, v in train_info.items():

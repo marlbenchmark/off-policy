@@ -141,21 +141,15 @@ class RecRunner(object):
         self.trainer = TrainAlgo(self.args, self.num_agents, self.policies, self.policy_mapping_fn,
                                  device=self.device, episode_length=self.episode_length)
 
-        self.policy_agents = {policy_id: sorted(
-            [agent_id for agent_id in self.agent_ids if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
+        self.policy_agents = {policy_id: sorted([agent_id for agent_id in self.agent_ids if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
 
-        self.policy_obs_dim = {
-            policy_id: self.policies[policy_id].obs_dim for policy_id in self.policy_ids}
-        self.policy_act_dim = {
-            policy_id: self.policies[policy_id].act_dim for policy_id in self.policy_ids}
-        self.policy_central_obs_dim = {
-            policy_id: self.policies[policy_id].central_obs_dim for policy_id in self.policy_ids}
+        self.policy_obs_dim = {policy_id: self.policies[policy_id].obs_dim for policy_id in self.policy_ids}
+        self.policy_act_dim = {policy_id: self.policies[policy_id].act_dim for policy_id in self.policy_ids}
+        self.policy_central_obs_dim = {policy_id: self.policies[policy_id].central_obs_dim for policy_id in self.policy_ids}
 
-        num_train_episodes = (
-            self.num_env_steps / self.episode_length) / (self.train_interval_episode)
-        self.beta_anneal = DecayThenFlatSchedule(
-            self.per_beta_start, 1.0, num_train_episodes, decay="linear")
+        num_train_episodes = (self.num_env_steps / self.episode_length) / (self.train_interval_episode)
+        self.beta_anneal = DecayThenFlatSchedule(self.per_beta_start, 1.0, num_train_episodes, decay="linear")
 
         if self.use_per:
             self.buffer = PrioritizedRecReplayBuffer(self.per_alpha,
@@ -184,11 +178,9 @@ class RecRunner(object):
     def run(self):
         # collect data
         self.trainer.prep_rollout()
-        train_episode_reward, train_metric = self.collecter(
-            explore=True, training_episode=True, warmup=False)
-
-        self.train_episode_rewards.append(train_episode_reward)
-        self.train_metrics.append(train_metric)
+        env_info = self.collecter(explore=True, training_episode=True, warmup=False)
+        for k, v in env_info.items():
+            self.eval_infos[k].append(v)
 
         # train
         if ((self.num_episodes_collected - self.last_train_episode) / self.train_interval_episode) >= 1 or self.last_train_episode == 0:
@@ -329,36 +321,29 @@ class RecRunner(object):
         warmup_rewards = []
         print("warm up...")
         for _ in range((num_warmup_episodes // self.num_envs) + 1):
-            reward, _ = self.collecter(
-                explore=True, training_episode=False, warmup=True)
-            warmup_rewards.append(reward)
+            env_info = self.collecter(explore=True, training_episode=False, warmup=True)
+            warmup_rewards.append(env_info['episode_rewards'])
         warmup_reward = np.mean(warmup_rewards)
-        print("warmup average episode rewards: ", warmup_reward)
+        print("warmup average episode rewards: {}".format(warmup_reward))
 
     def eval(self):
         self.trainer.prep_rollout()
 
-        eval_episode_rewards = []
-        eval_metrics = []
+        eval_infos = {}
+        eval_infos['average_score'] = []
+        eval_infos['average_episode_rewards'] = []
 
         for _ in range(self.args.num_eval_episodes):
-            eval_episode_reward, eval_metric = self.collecter(
-                explore=False, training_episode=False, warmup=False)
-            eval_episode_rewards.append(eval_episode_reward)
-            eval_metrics.append(eval_metric)
+            env_info = self.collecter( explore=False, training_episode=False, warmup=False)
+            
+            for k, v in env_info.items():
+                eval_infos[k].append(v)
 
-        average_episode_reward = np.mean(eval_episode_rewards)
-        print("eval average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'eval_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("eval_average_episode_rewards", {
-                                     'eval_average_episode_rewards': average_episode_reward}, self.total_env_steps)
+        self.log_env(eval_infos, suffix="eval_")
 
-        self.log_env(eval_metrics, suffix="eval")
-
+    @torch.no_grad()
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        env_info = {}
         p_id = 'policy_0'
         policy = self.policies[p_id]
 
@@ -370,15 +355,14 @@ class RecRunner(object):
         episode_step = 0
         terminate_episodes = False
 
-        recurrent_hidden_states = np.zeros(
+        rnn_states = np.zeros(
             (self.num_envs, len(self.policy_agents[p_id]), self.hidden_size))
         if is_multidiscrete(self.policy_info[p_id]['act_space']):
             self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
         else:
             self.sum_act_dim = self.policy_act_dim[p_id]
 
-        last_acts = np.zeros(
-            (self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim))
+        last_acts = np.zeros((self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim))
 
         # init
         episode_obs = {}
@@ -393,23 +377,17 @@ class RecRunner(object):
         episode_next_avail_acts = {}
         accumulated_rewards = {}
 
-        episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape))
-        episode_share_obs[p_id] = np.zeros(
-            (self.episode_length, *share_obs.shape))
-        episode_avail_acts[p_id] = np.ones(
-            (self.episode_length, *avail_acts.shape))
-        episode_acts[p_id] = np.zeros((self.episode_length, *last_acts.shape))
-        episode_rewards[p_id] = np.zeros(
-            (self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1))
-        episode_dones[p_id] = np.ones(
-            (self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1))
-        episode_dones_env[p_id] = np.ones(
-            (self.episode_length, self.num_envs, 1))
+        episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape), dtype=np.float32)
+        episode_share_obs[p_id] = np.zeros((self.episode_length, *share_obs.shape), dtype=np.float32)
+        episode_avail_acts[p_id] = np.ones((self.episode_length, *avail_acts.shape), dtype=np.float32)
+        episode_acts[p_id] = np.zeros((self.episode_length, *last_acts.shape), dtype=np.float32)
+        episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
+        episode_dones[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
+        episode_dones_env[p_id] = np.ones((self.episode_length, self.num_envs, 1), dtype=np.float32)
         accumulated_rewards[p_id] = []
 
         # obs, share_obs, avail_acts, action, rewards, dones, dones_env
-        turn_rewards_since_last_action = np.zeros(
-            (self.num_envs, len(self.policy_agents[p_id]), 1))
+        turn_rewards_since_last_action = np.zeros((self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
         env_acts = np.zeros_like(last_acts)
         turn_obs = np.zeros_like(obs)
         turn_share_obs = np.zeros_like(share_obs)
@@ -417,41 +395,32 @@ class RecRunner(object):
         turn_acts = np.zeros_like(last_acts)
         turn_rewards = np.zeros_like(turn_rewards_since_last_action)
         turn_dones = np.zeros_like(turn_rewards_since_last_action)
-        turn_dones_env = np.zeros((self.num_envs, 1))
+        turn_dones_env = np.zeros((self.num_envs, 1), dtype=np.float32)
 
         while t < self.episode_length:
             # get actions for all agents to step the env
             for agent_id in range(len(self.policy_agents[p_id])):
                 if warmup:
                     # completely random actions in pre-training warmup phase
-                    act = policy.get_random_actions(
-                        obs[:, agent_id], avail_acts[:, agent_id])
+                    act = policy.get_random_actions(obs[:, agent_id], avail_acts[:, agent_id])
                     # get new rnn hidden state
-                    _, recurrent_hidden_state, _ = policy.get_actions(obs[:, agent_id],
-                                                                      last_acts[:,
-                                                                                agent_id],
-                                                                      recurrent_hidden_states[:,
-                                                                                              agent_id],
+                    _, rnn_state, _ = policy.get_actions(obs[:, agent_id],
+                                                                      last_acts[:,agent_id],
+                                                                      rnn_states[:,agent_id],
                                                                       avail_acts[:, agent_id])
                 else:
                     if self.algorithm_name == "rmasac":
-                        act, recurrent_hidden_state, _ = policy.get_actions(obs[:, agent_id],
-                                                                            last_acts[:,
-                                                                                      agent_id],
-                                                                            recurrent_hidden_states[:,
-                                                                                                    agent_id],
-                                                                            avail_acts[:,
-                                                                                       agent_id],
+                        act, rnn_state, _ = policy.get_actions(obs[:, agent_id],
+                                                                            last_acts[:,agent_id],
+                                                                            rnn_states[:,agent_id],
+                                                                            avail_acts[:,agent_id],
                                                                             sample=explore)
                     else:
                         # get actions with exploration noise (eps-greedy/Gaussian)
-                        act, recurrent_hidden_state, _ = policy.get_actions(obs[:, agent_id],
-                                                                            last_acts[:,
-                                                                                      agent_id],
-                                                                            recurrent_hidden_states[:,
-                                                                                                    agent_id],
-                                                                            avail_acts[:,
-                                                                                       agent_id],
+                        act, rnn_state, _ = policy.get_actions(obs[:, agent_id],
+                                                                            last_acts[:,agent_id],
+                                                                            rnn_states[:,agent_id],
+                                                                            avail_acts[:,agent_id],
                                                                             t_env=self.total_env_steps,
                                                                             explore=explore,
                                                                             use_target=False,
@@ -460,8 +429,7 @@ class RecRunner(object):
                     act = act.detach().numpy()
 
                 # update rnn hidden state
-                recurrent_hidden_states[:, agent_id] = recurrent_hidden_state.detach(
-                ).numpy()
+                rnn_states[:, agent_id] = rnn_state.detach().numpy()
                 last_acts[:, agent_id] = act
 
                 # unpack actions to format needed to step env (list of dicts, dict mapping agent_id to action)
@@ -474,8 +442,7 @@ class RecRunner(object):
                 turn_avail_acts[:, agent_id] = avail_acts[:, agent_id].copy()
 
                 # env step and store the relevant episode information
-                next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(
-                    env_acts)
+                next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(env_acts)
 
                 t += 1
                 if training_episode:
@@ -484,8 +451,7 @@ class RecRunner(object):
 
                 # [rewards] - > current agent id
                 turn_rewards_since_last_action += rewards
-                turn_rewards[:, agent_id] = turn_rewards_since_last_action[:, agent_id].copy(
-                )
+                turn_rewards[:, agent_id] = turn_rewards_since_last_action[:, agent_id].copy()
                 turn_rewards_since_last_action[:, agent_id] = 0.0
 
                 for i in range(self.num_envs):
@@ -505,34 +471,26 @@ class RecRunner(object):
                         for left_agent_id in self.agent_ids:
                             if left_agent_id > current_agent_id:
                                 # [rewards]   must use the right value
-                                turn_rewards[i, left_agent_id] = turn_rewards_since_last_action[i, left_agent_id].copy(
-                                )
-                                turn_rewards_since_last_action[i,
-                                                               left_agent_id] = 0.0
+                                turn_rewards[i, left_agent_id] = turn_rewards_since_last_action[i, left_agent_id].copy()
+                                turn_rewards_since_last_action[i,left_agent_id] = 0.0
                                 # [dones]
-                                turn_dones[i, left_agent_id] = np.ones(
-                                    1, dtype=bool)
+                                turn_dones[i, left_agent_id] = np.ones(1, dtype=bool)
 
                                 # [obs, share_obs, avail_acts, actions]
-                                turn_acts[i, left_agent_id] = np.zeros(
-                                    policy.act_dim)
-                                turn_obs[i, left_agent_id] = np.zeros(
-                                    policy.obs_dim)
-                                turn_share_obs[i, left_agent_id] = np.zeros(
-                                    policy.central_obs_dim)
-                                turn_avail_acts[i, left_agent_id] = np.ones(
-                                    policy.act_dim)
+                                turn_acts[i, left_agent_id] = np.zeros(policy.act_dim)
+                                turn_obs[i, left_agent_id] = np.zeros(policy.obs_dim)
+                                turn_share_obs[i, left_agent_id] = np.zeros(policy.central_obs_dim)
+                                turn_avail_acts[i, left_agent_id] = np.ones(policy.act_dim)
 
                         if 'score' in infos[i].keys():
-                            score = infos[i]['score']
+                            env_info['average_score'] = infos[i]['score']
 
                         terminate_episodes = True
                         break
                     # done=False env
                     else:
                         # [dones, dones_env]
-                        turn_dones[i, agent_id] = dones[i,
-                                                        agent_id].copy()  # current step
+                        turn_dones[i, agent_id] = dones[i, agent_id].copy()  # current step
                         turn_dones_env = dones_env.copy()
 
                 if terminate_episodes:
@@ -581,10 +539,10 @@ class RecRunner(object):
                                episode_avail_acts,
                                episode_next_avail_acts)
 
-        average_episode_reward = np.mean(
-            np.sum(accumulated_rewards[p_id], axis=0))
+        average_episode_rewards = np.mean(np.sum(accumulated_rewards[p_id], axis=0))
+        env_info['average_episode_rewards'] = average_episode_rewards
 
-        return average_episode_reward, score
+        return env_info
 
     def log(self):
         end = time.time()
@@ -598,32 +556,25 @@ class RecRunner(object):
         for p_id, train_info in zip(self.policy_ids, self.train_infos):
             self.log_train(p_id, train_info)
 
-        average_episode_reward = np.mean(self.train_episode_rewards)
-        print("train average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'train_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("train_average_episode_rewards", {
-                                     'train_average_episode_rewards': average_episode_reward}, self.total_env_steps)
-
-        self.log_env(self.train_metrics)
+        self.log_env(self.env_infos)
         self.log_clear()
 
     def log_env(self, metrics, suffix="train"):
-        if len(metrics) > 0:
-            metric = np.mean(metrics)
-            print(suffix + " average score is " + str(metric))
-            if self.use_wandb:
-                wandb.log({suffix + '_score': metric},
-                            step=self.total_env_steps)
-            else:
-                self.writter.add_scalars(
-                    suffix + '_score', {suffix + '_score': metric}, self.total_env_steps)
+        for k, v in env_info:
+            if len(v) > 0:
+                v = np.mean(v)
+                suffix_k = k if suffix is None else suffix + k 
+                print(suffix_k + " is " + str(v))
+                if self.use_wandb:
+                    wandb.log({suffix_k: v}, step=self.total_env_steps)
+                else:
+                    self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_clear(self):
-        self.train_episode_rewards = []
-        self.train_metrics = []
+        self.env_infos = {}
+
+        self.env_infos['average_episode_rewards'] = []
+        self.env_infos['average_score'] = []
    
     def log_train(self, policy_id, train_info):
         for k, v in train_info.items():

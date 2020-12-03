@@ -326,6 +326,7 @@ class MlpRunner(object):
         self.log_env(eval_metrics, suffix="eval")
 
     # for mpe-simple_spread and mpe-simple_reference
+    @torch.no_grad()
     def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
         p_id = "policy_0"
         policy = self.policies[p_id]
@@ -438,6 +439,7 @@ class MlpRunner(object):
         return average_step_reward, None
 
     # for mpe-simple_speaker_listener
+    @torch.no_grad()
     def separated_collect_rollout(self, explore=True, training_episode=True, warmup=False):
         env = self.env if explore else self.eval_env
         n_rollout_threads = self.num_envs if explore else self.num_eval_envs

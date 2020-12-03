@@ -328,6 +328,7 @@ class MlpRunner(object):
 
         self.log_env(eval_metrics, suffix="eval")
 
+    @torch.no_grad()
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
         p_id = "policy_0"
         policy = self.policies[p_id]
