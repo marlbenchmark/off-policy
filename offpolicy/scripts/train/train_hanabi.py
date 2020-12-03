@@ -60,8 +60,6 @@ def parse_args(args, parser):
                         default=2, help="number of agents")
     parser.add_argument('--take_turn', action='store_false',
                         default=True, help="take turn to take action")
-    parser.add_argument('--use_cent_agent_obs', action='store_false',
-                        default=True, help="different central obs")
     parser.add_argument('--use_available_actions', action='store_false',
                         default=True, help="take turn to take action")
 
@@ -172,7 +170,6 @@ def main(args):
               "device": device,
               "run_dir": run_dir,
               "take_turn": all_args.take_turn,
-              "use_cent_agent_obs": all_args.use_cent_agent_obs,
               "use_available_actions": all_args.use_available_actions}
 
     total_num_steps = 0

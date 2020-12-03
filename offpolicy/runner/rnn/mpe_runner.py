@@ -4,6 +4,7 @@ from itertools import chain
 import wandb
 import torch
 from tensorboardX import SummaryWriter
+import time
 
 from offpolicy.utils.rec_buffer import RecReplayBuffer, PrioritizedRecReplayBuffer
 from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
@@ -15,7 +16,7 @@ class RecRunner(object):
         # non-tunable hyperparameters are in args
         self.args = config["args"]
         self.device = config["device"]
-        self.special_name = config["special_name"]
+        self.q_learning = ["qmix","vdn"]
 
         # set tunable hyperparameters
         self.share_policy = self.args.share_policy
@@ -63,11 +64,6 @@ class RecRunner(object):
         else:
             self.use_same_share_obs = False
 
-        if config.__contains__("use_cent_agent_obs"):
-            self.use_cent_agent_obs = config["use_cent_agent_obs"]
-        else:
-            self.use_cent_agent_obs = False
-
         if config.__contains__("use_available_actions"):
             self.use_avail_acts = config["use_available_actions"]
         else:
@@ -97,14 +93,8 @@ class RecRunner(object):
         self.eval_env = config["eval_env"]
         self.num_envs = 1
 
-        if self.share_policy:
-            self.collecter = self.shared_collect_rollout
-        else:
-            self.collecter = self.separated_collect_rollout
-
-        self.train = self.batch_train
-        self.saver = self.save
-        self.logger = self.log_train
+        # dir
+        self.model_dir = self.args.model_dir
         if self.use_wandb:
             self.save_dir = str(wandb.run.dir)
         else:
@@ -134,22 +124,21 @@ class RecRunner(object):
         elif self.algorithm_name == "qmix":
             from offpolicy.algorithms.qmix.algorithm.QMixPolicy import QMixPolicy as Policy
             from offpolicy.algorithms.qmix.qmix import QMix as TrainAlgo
-            self.saver = self.save_q
-            self.train = self.batch_train_q
         elif self.algorithm_name == "vdn":
             from offpolicy.algorithms.vdn.algorithm.VDNPolicy import VDNPolicy as Policy
             from offpolicy.algorithms.vdn.vdn import VDN as TrainAlgo
-            self.saver = self.save_q
-            self.train = self.batch_train_q
         else:
             raise NotImplementedError
 
-        self.policies = {p_id: Policy(
-            config, self.policy_info[p_id]) for p_id in self.policy_ids}
+        self.collecter = self.shared_collect_rollout if self.share_policy else self.separated_collect_rollout
+        self.saver = self.save_q if self.algorithm_name in self.q_learning else self.save        
+        self.restorer = self.restore_q if self.algorithm_name in self.q_learning else self.restore
+        self.train = self.batch_train_q if self.algorithm_name in self.q_learning else self.batch_train
 
-        if self.args.model_dir is not None:
-            self.restore(self.args.model_dir)
-        self.log_clear()
+        self.policies = {p_id: Policy(config, self.policy_info[p_id]) for p_id in self.policy_ids}
+
+        if self.model_dir is not None:
+            self.restorer()
 
         # initialize rmaddpg class for updating policies
         self.trainer = TrainAlgo(self.args, self.num_agents, self.policies, self.policy_mapping_fn,
@@ -189,9 +178,10 @@ class RecRunner(object):
                                           self.use_reward_normalization)
 
         # fill replay buffer with random actions
-        num_warmup_episodes = max(
-            (self.batch_size, self.args.num_random_episodes))
+        num_warmup_episodes = max((self.batch_size, self.args.num_random_episodes))
         self.warmup(num_warmup_episodes)
+        self.start = time.time()
+        self.log_clear()
 
     def run(self):
         # collect data
@@ -259,8 +249,7 @@ class RecRunner(object):
 
     def batch_train_q(self):
         self.trainer.prep_training()
-        update_popart = ((self.total_train_steps %
-                         self.popart_update_interval_step) == 0)
+        update_popart = ((self.total_train_steps % self.popart_update_interval_step) == 0)
         # gradient updates
         self.train_infos = []
 
@@ -285,35 +274,6 @@ class RecRunner(object):
             if (self.num_episodes_collected - self.last_hard_update_episode) / self.hard_update_interval_episode >= 1:
                 self.trainer.hard_target_updates()
                 self.last_hard_update_episode = self.num_episodes_collected
-
-    def log(self):
-        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}.\n"
-              .format(self.args.scenario_name,
-                      self.algorithm_name,
-                      self.args.experiment_name,
-                      self.total_env_steps,
-                      self.num_env_steps))
-        for p_id, train_info in zip(self.policy_ids, self.train_infos):
-            self.logger(p_id, train_info, self.total_env_steps)
-
-        average_episode_reward = np.mean(self.train_episode_rewards)
-        print("train average episode rewards is " + str(average_episode_reward))
-        if self.use_wandb:
-            wandb.log({'train_average_episode_rewards': average_episode_reward},
-                      step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("train_average_episode_rewards", {
-                                     'train_average_episode_rewards': average_episode_reward}, self.total_env_steps)
-
-        self.log_env(self.train_metrics)
-        self.log_clear()
-
-    def log_env(self, metrics, suffix="train"):
-        pass
-
-    def log_clear(self):
-        self.train_episode_rewards = []
-        self.train_metrics = []
 
     def save(self):
         for pid in self.policy_ids:
@@ -344,14 +304,25 @@ class RecRunner(object):
         torch.save(self.trainer.mixer.state_dict(),
                    self.save_dir + '/mixer.pt')
 
-    def restore(self, checkpoint):
+    def restore(self):
         for pid in self.policy_ids:
-            path = checkpoint + str(pid)
+            path = str(self.model_dir) + str(pid)
+            print("load the pretrained model from {}".format(path))
             policy_critic_state_dict = torch.load(path + '/critic.pt')
             policy_actor_state_dict = torch.load(path + '/actor.pt')
 
             self.policies[pid].critic.load_state_dict(policy_critic_state_dict)
             self.policies[pid].actor.load_state_dict(policy_actor_state_dict)
+
+    def restore_q(self):
+        for pid in self.policy_ids:
+            path = str(self.model_dir) + str(pid)
+            print("load the pretrained model from {}".format(path))
+            policy_q_state_dict = torch.load(path + '/q_network.pt')           
+            self.policies[pid].q_network.load_state_dict(policy_q_state_dict)
+            
+        policy_mixer_state_dict = torch.load(str(self.model_dir) + '/mixer.pt')
+        self.trainer.mixer.load_state_dict(policy_mixer_state_dict)
 
     def warmup(self, num_warmup_episodes):
         # fill replay buffer with enough episodes to begin training
@@ -705,10 +676,41 @@ class RecRunner(object):
 
         return average_episode_reward, None
 
-    def log_train(self, policy_id, train_info, t_env):
+    def log(self):
+        end = time.time()
+        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS {}.\n"
+              .format(self.args.scenario_name,
+                      self.algorithm_name,
+                      self.args.experiment_name,
+                      self.total_env_steps,
+                      self.num_env_steps,
+                      int(self.total_env_steps / (end - self.start))))
+        for p_id, train_info in zip(self.policy_ids, self.train_infos):
+            self.log_train(p_id, train_info)
+
+        average_episode_reward = np.mean(self.train_episode_rewards)
+        print("train average episode rewards is " + str(average_episode_reward))
+        if self.use_wandb:
+            wandb.log({'train_average_episode_rewards': average_episode_reward},
+                      step=self.total_env_steps)
+        else:
+            self.writter.add_scalars("train_average_episode_rewards", {
+                                     'train_average_episode_rewards': average_episode_reward}, self.total_env_steps)
+
+        self.log_env(self.train_metrics)
+        self.log_clear()
+
+    def log_env(self, metrics, suffix="train"):
+        pass
+
+    def log_clear(self):
+        self.train_episode_rewards = []
+        self.train_metrics = []
+
+    def log_train(self, policy_id, train_info):
         for k, v in train_info.items():
             policy_k = str(policy_id) + '/' + k
             if self.use_wandb:
-                wandb.log({policy_k: v}, step=t_env)
+                wandb.log({policy_k: v}, step=self.total_env_steps)
             else:
-                self.writter.add_scalars(policy_k, {policy_k: v}, t_env)
+                self.writter.add_scalars(policy_k, {policy_k: v}, self.total_env_steps)

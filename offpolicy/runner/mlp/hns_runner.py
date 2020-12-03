@@ -4,6 +4,7 @@ import numpy as np
 from itertools import chain
 from tensorboardX import SummaryWriter
 import torch
+import time
 
 from offpolicy.utils.mlp_buffer import MlpReplayBuffer, PrioritizedMlpReplayBuffer
 from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
@@ -15,6 +16,7 @@ class MlpRunner(object):
         # non-tunable hyperparameters are in args
         self.args = config["args"]
         self.device = config["device"]
+        self.q_learning = ["mqix","mvdn"]
 
         # set tunable hyperparameters
         self.share_policy = self.args.share_policy
@@ -57,11 +59,6 @@ class MlpRunner(object):
         else:
             self.use_same_share_obs = False
 
-        if config.__contains__("use_cent_agent_obs"):
-            self.use_cent_agent_obs = config["use_cent_agent_obs"]
-        else:
-            self.use_cent_agent_obs = False
-
         if config.__contains__("use_available_actions"):
             self.use_avail_acts = config["use_available_actions"]
         else:
@@ -81,11 +78,8 @@ class MlpRunner(object):
         self.num_envs = self.env.num_envs
         self.num_eval_envs = self.eval_env.num_envs
 
-        self.collecter = self.collect_rollout
-
-        self.train = self.batch_train
-        self.logger = self.log_train
-        self.saver = self.save
+        # dir
+        self.model_dir = self.args.model_dir
         if self.use_wandb:
             self.save_dir = str(wandb.run.dir)
         else:
@@ -115,22 +109,22 @@ class MlpRunner(object):
         elif self.algorithm_name == "mqmix":
             from offpolicy.algorithms.mqmix.algorithm.mQMixPolicy import M_QMixPolicy as Policy
             from offpolicy.algorithms.mqmix.mqmix import M_QMix as TrainAlgo
-            self.saver = self.save_mq
-            self.train = self.batch_train_mq
         elif self.algorithm_name == "mvdn":
             from offpolicy.algorithms.mvdn.algorithm.mVDNPolicy import M_VDNPolicy as Policy
             from offpolicy.algorithms.mvdn.mvdn import M_VDN as TrainAlgo
-            self.saver = self.save_mq
-            self.train = self.batch_train_mq
         else:
             raise NotImplementedError
+
+        self.collecter = self.collect_rollout
+        self.saver = self.save_q if self.algorithm_name in self.q_learning else self.save        
+        self.restorer = self.restore_q if self.algorithm_name in self.q_learning else self.restore
+        self.train = self.batch_train_q if self.algorithm_name in self.q_learning else self.batch_train
 
         self.policies = {p_id: Policy(
             config, self.policy_info[p_id]) for p_id in self.policy_ids}
 
-        if self.args.model_dir is not None:
-            self.restore(self.args.model_dir)
-        self.log_clear()
+        if self.model_dir is not None:
+            self.restorer()
 
         # initialize class for updating policies
         self.trainer = TrainAlgo(self.args, self.num_agents, self.policies, self.policy_mapping_fn,
@@ -170,6 +164,8 @@ class MlpRunner(object):
         self.finish_first_train_reset = False
         num_warmup_episodes = max((self.batch_size/self.episode_length, self.args.num_random_episodes))
         self.warmup(num_warmup_episodes)
+        self.start = time.time()
+        self.log_clear()
 
     def run(self):
         # collect data
@@ -227,7 +223,7 @@ class MlpRunner(object):
                     self.policies[pid].hard_target_updates()
                 self.last_hard_update_T = self.total_env_steps
 
-    def batch_train_mq(self):
+    def batch_train_q(self):
         self.trainer.prep_training()
         # gradient updates
         self.train_infos = []
@@ -252,45 +248,6 @@ class MlpRunner(object):
                 self.trainer.hard_target_updates()
                 self.last_hard_update_T = self.total_env_steps
 
-    def log(self):
-        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}.\n"
-              .format(self.env_name,
-                      self.algorithm_name,
-                      self.args.experiment_name,
-                      self.total_env_steps,
-                      self.num_env_steps))
-        for p_id, train_stat in zip(self.policy_ids, self.train_infos):
-            self.logger(p_id, train_stat, self.total_env_steps)
-
-        average_step_reward = np.mean(self.train_step_rewards)
-
-        print("train_average step rewards is " + str(average_step_reward))
-        if self.use_wandb:
-            wandb.log(
-                {'train_average_step_rewards': average_step_reward}, step=self.total_env_steps)
-        else:
-            self.writter.add_scalars("train_average_step_rewards", {
-                                        'train_average_step_rewards': average_step_reward}, self.total_env_steps)
-
-        self.log_env(self.train_metrics, suffix="train")
-        self.log_clear()
-
-    def log_env(self, metrics, suffix="train"):
-        if len(metrics) > 0:
-            if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
-                metric = np.mean(metrics)
-                print(suffix + " success rate is " + str(metric))
-                if self.use_wandb:
-                    wandb.log({suffix + '_success_rate': metric},
-                              step=self.total_env_steps)
-                else:
-                    self.writter.add_scalars(
-                        suffix + '_success_rate', {suffix + '_success_rate': metric}, self.total_env_steps)
-
-    def log_clear(self):
-        self.train_step_rewards = []
-        self.train_metrics = []
-
     def save(self):
         for pid in self.policy_ids:
             policy_critic = self.policies[pid].critic
@@ -307,7 +264,7 @@ class MlpRunner(object):
             torch.save(policy_actor.state_dict(),
                        actor_save_path + '/actor.pt')
 
-    def save_mq(self):
+    def save_q(self):
         for pid in self.policy_ids:
             policy_Q = self.policies[pid].q_network
             p_save_path = self.save_dir + '/' + str(pid)
@@ -320,14 +277,25 @@ class MlpRunner(object):
         torch.save(self.trainer.mixer.state_dict(),
                    self.save_dir + '/mixer.pt')
 
-    def restore(self, checkpoint):
+    def restore(self):
         for pid in self.policy_ids:
-            path = checkpoint + str(pid)
+            path = str(self.model_dir) + str(pid)
+            print("load the pretrained model from {}".format(path))
             policy_critic_state_dict = torch.load(path + '/critic.pt')
             policy_actor_state_dict = torch.load(path + '/actor.pt')
 
             self.policies[pid].critic.load_state_dict(policy_critic_state_dict)
             self.policies[pid].actor.load_state_dict(policy_actor_state_dict)
+
+    def restore_q(self):
+        for pid in self.policy_ids:
+            path = str(self.model_dir) + str(pid)
+            print("load the pretrained model from {}".format(path))
+            policy_q_state_dict = torch.load(path + '/q_network.pt')           
+            self.policies[pid].q_network.load_state_dict(policy_q_state_dict)
+            
+        policy_mixer_state_dict = torch.load(str(self.model_dir) + '/mixer.pt')
+        self.trainer.mixer.load_state_dict(policy_mixer_state_dict)
 
     def warmup(self, num_warmup_episodes):
         # fill replay buffer with enough episodes to begin training
@@ -499,10 +467,51 @@ class MlpRunner(object):
 
         return average_step_reward, success_rate
 
-    def log_train(self, policy_id, train_info, t_env):
+    def log(self):
+        end = time.time()
+        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS{}.\n"
+              .format(self.env_name,
+                      self.algorithm_name,
+                      self.args.experiment_name,
+                      self.total_env_steps,
+                      self.num_env_steps,
+                      int(self.total_env_steps / (end - self.start))))
+        for p_id, train_info in zip(self.policy_ids, self.train_infos):
+            self.log_train(p_id, train_info)
+
+        average_step_reward = np.mean(self.train_step_rewards)
+
+        print("train_average step rewards is " + str(average_step_reward))
+        if self.use_wandb:
+            wandb.log(
+                {'train_average_step_rewards': average_step_reward}, step=self.total_env_steps)
+        else:
+            self.writter.add_scalars("train_average_step_rewards", {
+                                        'train_average_step_rewards': average_step_reward}, self.total_env_steps)
+
+        self.log_env(self.train_metrics, suffix="train")
+        self.log_clear()
+
+    def log_env(self, metrics, suffix="train"):
+        if len(metrics) > 0:
+            if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
+                metric = np.mean(metrics)
+                print(suffix + " success rate is " + str(metric))
+                if self.use_wandb:
+                    wandb.log({suffix + '_success_rate': metric},
+                              step=self.total_env_steps)
+                else:
+                    self.writter.add_scalars(
+                        suffix + '_success_rate', {suffix + '_success_rate': metric}, self.total_env_steps)
+
+    def log_clear(self):
+        self.train_step_rewards = []
+        self.train_metrics = []
+
+    def log_train(self, policy_id, train_info):
         for k, v in train_info.items():
             policy_k = str(policy_id) + '/' + k
             if self.use_wandb:
-                wandb.log({policy_k: v}, step=t_env)
+                wandb.log({policy_k: v}, step=self.total_env_steps)
             else:
-                self.writter.add_scalars(policy_k, {policy_k: v}, t_env)
+                self.writter.add_scalars(policy_k, {policy_k: v}, self.total_env_steps)

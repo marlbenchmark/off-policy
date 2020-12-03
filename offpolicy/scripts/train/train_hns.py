@@ -78,9 +78,6 @@ def parse_args(args, parser):
     parser.add_argument("--num_food", type=int,
                         default=0, help="number of food")
 
-    parser.add_argument('--use_cent_agent_obs', action='store_false',
-                        default=True, help="different central obs")
-
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -187,8 +184,7 @@ def main(args):
               "eval_env": eval_env,
               "num_agents": num_agents,
               "device": device,
-              "run_dir": run_dir,
-              "use_cent_agent_obs": all_args.use_cent_agent_obs}
+              "run_dir": run_dir}
 
     total_num_steps = 0
     runner = Runner(config=config)
