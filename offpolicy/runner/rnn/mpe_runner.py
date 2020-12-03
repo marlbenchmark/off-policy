@@ -21,7 +21,6 @@ class MPERunner(RecRunner):
         self.start = time.time()
         self.log_clear()
     
-    @torch.no_grad()
     def eval(self):
         self.trainer.prep_rollout()
         eval_infos = {}
@@ -34,8 +33,8 @@ class MPERunner(RecRunner):
 
         self.log_env(eval_infos, suffix="eval_")
       
-    # for mpe-simple_spread and mpe-simple_reference
-    
+    # for mpe-simple_spread and mpe-simple_reference  
+    @torch.no_grad() 
     def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
         env_info = {}
         p_id = "policy_0"
@@ -162,7 +161,7 @@ class MPERunner(RecRunner):
         return env_info
     
     # for mpe-simple_speaker_listener
-    
+    @torch.no_grad()
     def separated_collect_rollout(self, explore=True, training_episode=True, warmup=False):
         env_info = {}
         env = self.env if training_episode or warmup else self.eval_env

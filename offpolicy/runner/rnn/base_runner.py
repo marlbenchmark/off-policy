@@ -206,7 +206,6 @@ class RecRunner(object):
 
         return self.total_env_steps
     
-    @torch.no_grad()
     def warmup(self, num_warmup_episodes):
         # fill replay buffer with enough episodes to begin training
         self.trainer.prep_rollout()

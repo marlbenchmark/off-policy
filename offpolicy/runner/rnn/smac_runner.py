@@ -20,7 +20,6 @@ class SMACRunner(RecRunner):
         self.start = time.time()
         self.log_clear()
     
-    @torch.no_grad()
     def eval(self):
         self.trainer.prep_rollout()
 
@@ -36,6 +35,7 @@ class SMACRunner(RecRunner):
 
         self.log_env(eval_infos, suffix="eval_")
     
+    @torch.no_grad()
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
         env_info = {}
         p_id = "policy_0"
