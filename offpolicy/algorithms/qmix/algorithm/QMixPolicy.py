@@ -66,8 +66,7 @@ class QMixPolicy:
                 all_q_values = []
                 for i in range(len(self.act_dim)):
                     curr_q_batch = q_batch[i]
-                    curr_action_portion = action_batch[:,
-                                                       :, ind: ind + self.act_dim[i]]
+                    curr_action_portion = action_batch[:,:, ind: ind + self.act_dim[i]]
                     curr_action_inds = curr_action_portion.max(dim=-1)[1]
                     curr_q_values = torch.gather(
                         curr_q_batch, 2, curr_action_inds.unsqueeze(dim=-1))

@@ -101,8 +101,7 @@ class MADDPG:
             target_Qs = rewards + self.args.gamma * \
                 (1 - dones_env) * next_step_Q
 
-        predicted_Qs = update_policy.critic(
-            cent_obs, np.concatenate(cent_act, axis=-1)).view(-1, 1)
+        predicted_Qs = update_policy.critic(cent_obs, np.concatenate(cent_act, axis=-1)).view(-1, 1)
 
         update_policy.critic_optimizer.zero_grad()
 
@@ -114,8 +113,7 @@ class MADDPG:
             else:
                 critic_loss = mse_loss(error).flatten()
             # weight each loss element by their importance sample weight
-            critic_loss = (
-                critic_loss * torch.FloatTensor(importance_weights)).mean()
+            critic_loss = (critic_loss * torch.FloatTensor(importance_weights)).mean()
             # new priorities are TD error
             new_priorities = error.abs().detach().numpy().flatten() + self.per_eps
         else:
