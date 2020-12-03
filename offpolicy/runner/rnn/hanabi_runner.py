@@ -30,7 +30,6 @@ class RecRunner(object):
         self.buffer_size = self.args.buffer_size
         self.batch_size = self.args.batch_size
         self.hidden_size = self.args.hidden_size
-        self.max_grad_norm = self.args.max_grad_norm
         self.use_soft_update = self.args.use_soft_update
         self.hard_update_interval_episode = self.args.hard_update_interval_episode
         self.popart_update_interval_step = self.args.popart_update_interval_step
@@ -101,7 +100,7 @@ class RecRunner(object):
 
         self.train = self.batch_train
         self.saver = self.save
-        self.logger = self.log_stats
+        self.logger = self.log_train
         if self.use_wandb:
             self.save_dir = str(wandb.run.dir)
         else:
@@ -133,13 +132,11 @@ class RecRunner(object):
             from offpolicy.algorithms.qmix.qmix import QMix as TrainAlgo
             self.saver = self.save_q
             self.train = self.batch_train_q
-            self.logger = self.log_stats_q
         elif self.algorithm_name == "vdn":
             from offpolicy.algorithms.vdn.algorithm.VDNPolicy import VDNPolicy as Policy
             from offpolicy.algorithms.vdn.vdn import VDN as TrainAlgo
             self.saver = self.save_q
             self.train = self.batch_train_q
-            self.logger = self.log_stats_q
         else:
             raise NotImplementedError
 
@@ -239,12 +236,9 @@ class RecRunner(object):
             else:
                 sample = self.buffer.sample(self.batch_size)
 
-            if self.use_same_share_obs:
-                stats, new_priorities, idxes = self.trainer.shared_train_policy_on_batch(
-                    p_id, sample, update_actor)
-            else:
-                stats, new_priorities, idxes = self.trainer.cent_train_policy_on_batch(
-                    p_id, sample, update_actor)
+            update = self.trainer.shared_train_policy_on_batch if self.use_same_share_obs else self.trainer.cent_train_policy_on_batch
+            
+            train_info, new_priorities, idxes = update(p_id, sample, update_actor)
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)
@@ -627,63 +621,10 @@ class RecRunner(object):
 
         return average_episode_reward, score
     
-    def log_stats(self, policy_id, stats, t_env):
-        # unpack the statistics
-        critic_loss, actor_loss, alpha_loss, critic_grad_norm, actor_grad_norm, alpha, ent_diff = stats
-
-        if self.use_wandb:
-            # log into wandb
-            wandb.log({str(policy_id) + '/critic_loss': critic_loss}, step=t_env)
-            wandb.log(
-                {str(policy_id) + '/critic_grad_norm': critic_grad_norm}, step=t_env)
-            if actor_loss is not None:
-                wandb.log(
-                    {str(policy_id) + '/actor_loss': actor_loss}, step=t_env)
-            if actor_grad_norm is not None:
-                wandb.log(
-                    {str(policy_id) + '/actor_grad_norm': actor_grad_norm}, step=t_env)
-            if alpha_loss is not None:
-                wandb.log(
-                    {str(policy_id) + '/alpha_loss': alpha_loss}, step=t_env)
-            if alpha is not None:
-                wandb.log({str(policy_id) + '/alpha': alpha}, step=t_env)
-            if ent_diff is not None:
-                wandb.log({str(policy_id) + '/ent_diff': ent_diff}, step=t_env)
-        else:
-            # log into tensorboardX
-            self.writter.add_scalars(str(
-                policy_id) + '/critic_loss', {str(policy_id) + '/critic_loss': critic_loss}, t_env)
-            self.writter.add_scalars(str(policy_id) + '/critic_grad_norm',
-                                     {str(policy_id) + '/critic_grad_norm': critic_grad_norm}, t_env)
-            if actor_loss is not None:
-                self.writter.add_scalars(str(
-                    policy_id) + '/actor_loss', {str(policy_id) + '/actor_loss': actor_loss}, t_env)
-            if actor_grad_norm is not None:
-                self.writter.add_scalars(str(policy_id) + '/actor_grad_norm',
-                                         {str(policy_id) + '/actor_grad_norm': actor_grad_norm}, t_env)
-            if alpha_loss is not None:
-                self.writter.add_scalars(str(
-                    policy_id) + '/alpha_loss', {str(policy_id) + '/alpha_loss': alpha_loss}, t_env)
-            if alpha is not None:
-                self.writter.add_scalars(
-                    str(policy_id) + '/alpha', {str(policy_id) + '/alpha': alpha}, t_env)
-            if ent_diff is not None:
-                self.writter.add_scalars(
-                    str(policy_id) + '/ent_diff', {str(policy_id) + '/ent_diff': ent_diff}, t_env)
-
-    def log_stats_q(self, policy_id, stats, t_env):
-        # unpack the statistics
-        loss, grad_norm, mean_Qs = stats
-        if self.use_wandb:
-            # log into wandb
-            wandb.log({str(policy_id) + '/loss': loss}, step=t_env)
-            wandb.log({str(policy_id) + '/grad_norm': grad_norm}, step=t_env)
-            wandb.log({str(policy_id) + '/mean_q': mean_Qs}, step=t_env)
-        else:
-            # log into tensorboardX
-            self.writter.add_scalars(
-                str(policy_id) + '/loss', {str(policy_id) + '/loss': loss}, t_env)
-            self.writter.add_scalars(
-                str(policy_id) + '/grad_norm', {str(policy_id) + '/grad_norm': grad_norm}, t_env)
-            self.writter.add_scalars(
-                str(policy_id) + '/mean_q', {str(policy_id) + '/mean_q': mean_Qs}, t_env)
+    def log_train(self, policy_id, train_info, t_env):
+        for k, v in train_info.items():
+            policy_k = str(policy_id) + '/' + k
+            if self.use_wandb:
+                wandb.log({policy_k: v}, step=t_env)
+            else:
+                self.writter.add_scalars(policy_k, {policy_k: v}, t_env)

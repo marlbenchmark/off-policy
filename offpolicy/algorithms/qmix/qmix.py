@@ -319,20 +319,23 @@ class QMix:
             self.parameters, self.args.max_grad_norm)
         self.optimizer.step()
 
-        return (loss, grad_norm, predicted_Q_tots.mean()), new_priorities, idxes
+        train_info = {}
+        train_info['loss'] = loss
+        train_info['grad_norm'] = grad_norm
+        train_info['Q_tot'] = predicted_Q_tots.mean()
+
+        return train_info, new_priorities, idxes
 
     def hard_target_updates(self):
         print("hard update targets")
         for policy_id in self.policy_ids:
-            self.target_policies[policy_id].load_state(
-                self.policies[policy_id])
+            self.target_policies[policy_id].load_state(self.policies[policy_id])
         if self.mixer is not None:
             self.target_mixer.load_state_dict(self.mixer.state_dict())
 
     def soft_target_updates(self):
         for policy_id in self.policy_ids:
-            soft_update(
-                self.target_policies[policy_id], self.policies[policy_id], self.tau)
+            soft_update(self.target_policies[policy_id], self.policies[policy_id], self.tau)
         if self.mixer is not None:
             soft_update(self.target_mixer, self.mixer, self.tau)
 

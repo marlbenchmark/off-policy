@@ -29,7 +29,6 @@ class MlpRunner(object):
         self.buffer_size = self.args.buffer_size
         self.batch_size = self.args.batch_size
         self.hidden_size = self.args.hidden_size
-        self.max_grad_norm = self.args.max_grad_norm
         self.use_soft_update = self.args.use_soft_update
         self.hard_update_interval = self.args.hard_update_interval
         self.actor_train_interval_step = self.args.actor_train_interval_step
@@ -83,7 +82,7 @@ class MlpRunner(object):
         self.num_eval_envs = self.eval_env.num_envs
       
         self.train = self.batch_train
-        self.logger = self.log_stats
+        self.logger = self.log_train
         self.saver = self.save
         self.collecter = self.collect_rollout
         if self.use_wandb:
@@ -117,18 +116,15 @@ class MlpRunner(object):
             from offpolicy.algorithms.mqmix.mqmix import M_QMix as TrainAlgo
             self.saver = self.save_mq
             self.train = self.batch_train_mq
-            self.logger = self.log_stats_mq
         elif self.algorithm_name == "mvdn":
             from offpolicy.algorithms.mvdn.algorithm.mVDNPolicy import M_VDNPolicy as Policy
             from offpolicy.algorithms.mvdn.mvdn import M_VDN as TrainAlgo
             self.saver = self.save_mq
             self.train = self.batch_train_mq
-            self.logger = self.log_stats_mq
         else:
             raise NotImplementedError
 
-        self.policies = {p_id: Policy(
-            config, self.policy_info[p_id]) for p_id in self.policy_ids}
+        self.policies = {p_id: Policy(config, self.policy_info[p_id]) for p_id in self.policy_ids}
 
         if self.args.model_dir is not None:
             self.restore(self.args.model_dir)
@@ -178,8 +174,7 @@ class MlpRunner(object):
     def run(self):
         # collect data
         self.trainer.prep_rollout()
-        train_step_reward, train_metric = self.collecter(
-            explore=True, training_episode=True, warmup=False)
+        train_step_reward, train_metric = self.collecter(explore=True, training_episode=True, warmup=False)
 
         self.train_step_rewards.append(train_step_reward)
         self.train_metrics.append(train_metric)
@@ -204,10 +199,9 @@ class MlpRunner(object):
     def batch_train(self):
         self.trainer.prep_training()
         # do a gradient update if the number of episodes collected since the last training update exceeds the specified amount
-        update_actor = ((self.total_train_steps %
-                         self.actor_train_interval_step) == 0)
+        update_actor = ((self.total_train_steps % self.actor_train_interval_step) == 0)
         # gradient updates
-        self.train_stats = []
+        self.train_infos = []
         for p_id in self.policy_ids:
             if self.use_per:
                 beta = self.beta_anneal.eval(self.total_train_steps)
@@ -215,17 +209,14 @@ class MlpRunner(object):
             else:
                 sample = self.buffer.sample(self.batch_size)
 
-            if self.use_same_share_obs:
-                stats, new_priorities, idxes = self.trainer.shared_train_policy_on_batch(
-                    p_id, sample, update_actor)
-            else:
-                stats, new_priorities, idxes = self.trainer.cent_train_policy_on_batch(
-                    p_id, sample, update_actor)
+            update = self.trainer.shared_train_policy_on_batch if self.use_same_share_obs else self.trainer.cent_train_policy_on_batch
+            
+            train_info, new_priorities, idxes = update(p_id, sample, update_actor)
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)
 
-            self.train_stats.append(stats)
+            self.train_infos.append(train_info)
 
         if self.use_soft_update and update_actor:
             for pid in self.policy_ids:
@@ -239,7 +230,7 @@ class MlpRunner(object):
     def batch_train_mq(self):
         self.trainer.prep_training()
         # gradient updates
-        self.train_stats = []
+        self.train_infos = []
         for p_id in self.policy_ids:
             if self.use_per:
                 beta = self.beta_anneal.eval(self.total_train_steps)
@@ -247,13 +238,12 @@ class MlpRunner(object):
             else:
                 sample = self.buffer.sample(self.batch_size)
 
-            stats, new_priorities, idxes = self.trainer.train_policy_on_batch(
-                sample, self.use_same_share_obs)
+            train_info, new_priorities, idxes = self.trainer.train_policy_on_batch(sample, self.use_same_share_obs)
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)
 
-            self.train_stats.append(stats)
+            self.train_infos.append(train_info)
 
         if self.use_soft_update:
             self.trainer.soft_target_updates()
@@ -270,8 +260,8 @@ class MlpRunner(object):
                       self.args.experiment_name,
                       self.total_env_steps,
                       self.num_env_steps))
-        for p_id, train_stat in zip(self.policy_ids, self.train_stats):
-            self.logger(p_id, train_stat, self.total_env_steps)
+        for p_id, train_info in zip(self.policy_ids, self.train_infos):
+            self.logger(p_id, train_info, self.total_env_steps)
 
         average_step_reward = np.mean(self.train_step_rewards)
 
@@ -495,63 +485,10 @@ class MlpRunner(object):
 
         return average_step_reward, battles_won
 
-    def log_stats(self, policy_id, stats, t_env):
-        # unpack the statistics
-        critic_loss, actor_loss, alpha_loss, critic_grad_norm, actor_grad_norm, alpha, ent_diff = stats
-
-        if self.use_wandb:
-            # log into wandb
-            wandb.log({str(policy_id) + '/critic_loss': critic_loss}, step=t_env)
-            wandb.log(
-                {str(policy_id) + '/critic_grad_norm': critic_grad_norm}, step=t_env)
-            if actor_loss is not None:
-                wandb.log(
-                    {str(policy_id) + '/actor_loss': actor_loss}, step=t_env)
-            if actor_grad_norm is not None:
-                wandb.log(
-                    {str(policy_id) + '/actor_grad_norm': actor_grad_norm}, step=t_env)
-            if alpha_loss is not None:
-                wandb.log(
-                    {str(policy_id) + '/alpha_loss': alpha_loss}, step=t_env)
-            if alpha is not None:
-                wandb.log({str(policy_id) + '/alpha': alpha}, step=t_env)
-            if ent_diff is not None:
-                wandb.log({str(policy_id) + '/ent_diff': ent_diff}, step=t_env)
-        else:
-            # log into tensorboardX
-            self.writter.add_scalars(str(
-                policy_id) + '/critic_loss', {str(policy_id) + '/critic_loss': critic_loss}, t_env)
-            self.writter.add_scalars(str(policy_id) + '/critic_grad_norm',
-                                     {str(policy_id) + '/critic_grad_norm': critic_grad_norm}, t_env)
-            if actor_loss is not None:
-                self.writter.add_scalars(str(
-                    policy_id) + '/actor_loss', {str(policy_id) + '/actor_loss': actor_loss}, t_env)
-            if actor_grad_norm is not None:
-                self.writter.add_scalars(str(policy_id) + '/actor_grad_norm',
-                                         {str(policy_id) + '/actor_grad_norm': actor_grad_norm}, t_env)
-            if alpha_loss is not None:
-                self.writter.add_scalars(str(
-                    policy_id) + '/alpha_loss', {str(policy_id) + '/alpha_loss': alpha_loss}, t_env)
-            if alpha is not None:
-                self.writter.add_scalars(
-                    str(policy_id) + '/alpha', {str(policy_id) + '/alpha': alpha}, t_env)
-            if ent_diff is not None:
-                self.writter.add_scalars(
-                    str(policy_id) + '/ent_diff', {str(policy_id) + '/ent_diff': ent_diff}, t_env)
-
-    def log_stats_mq(self, policy_id, stats, t_env):
-        # unpack the statistics
-        loss, grad_norm, mean_Qs = stats
-        if self.use_wandb:
-            # log into wandb
-            wandb.log({str(policy_id) + '/loss': loss}, step=t_env)
-            wandb.log({str(policy_id) + '/grad_norm': grad_norm}, step=t_env)
-            wandb.log({str(policy_id) + '/mean_q': mean_Qs}, step=t_env)
-        else:
-            # log into tensorboardX
-            self.writter.add_scalars(
-                str(policy_id) + '/loss', {str(policy_id) + '/loss': loss}, t_env)
-            self.writter.add_scalars(
-                str(policy_id) + '/grad_norm', {str(policy_id) + '/grad_norm': grad_norm}, t_env)
-            self.writter.add_scalars(
-                str(policy_id) + '/mean_q', {str(policy_id) + '/mean_q': mean_Qs}, t_env)
+    def log_train(self, policy_id, train_info, t_env):
+        for k, v in train_info.items():
+            policy_k = str(policy_id) + '/' + k
+            if self.use_wandb:
+                wandb.log({policy_k: v}, step=t_env)
+            else:
+                self.writter.add_scalars(policy_k, {policy_k: v}, t_env)

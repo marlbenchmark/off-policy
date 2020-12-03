@@ -246,7 +246,7 @@ class R_MASAC:
 
         update_policy.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
 
@@ -370,7 +370,7 @@ class R_MASAC:
         update_policy.critic_optimizer.zero_grad()
         update_policy.actor_optimizer.zero_grad()
         actor_loss.backward()
-        actor_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
+        actor_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
                                                                 self.args.max_grad_norm)
         update_policy.actor_optimizer.step()
         # unfreeze the Q networks
@@ -405,9 +405,16 @@ class R_MASAC:
             alpha_loss = torch.scalar_tensor(0.0)
             ent_diff = torch.scalar_tensor(0.0)
 
-        return (critic_loss, actor_loss, alpha_loss,
-                critic_update_grad_norm, actor_update_grad_norm,
-                update_policy.alpha, ent_diff), new_priorities, idxes
+        train_info = {}
+        train_info['critic_loss'] = critic_loss
+        train_info['actor_loss'] = actor_loss
+        train_info['alpha_loss'] = alpha_loss
+        train_info['critic_grad_norm'] = critic_grad_norm
+        train_info['actor_grad_norm'] = actor_grad_norm
+        train_info['alpha'] = update_policy.alpha
+        train_info['entropy'] = ent_diff
+
+        return train_info, new_priorities, idxes
 
     def cent_train_policy_on_batch(self, update_policy_id, batch, update_actor=None):
         # unpack the batch
@@ -582,7 +589,7 @@ class R_MASAC:
 
         update_policy.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
 
@@ -708,7 +715,7 @@ class R_MASAC:
         update_policy.critic_optimizer.zero_grad()
         update_policy.actor_optimizer.zero_grad()
         actor_loss.backward()
-        actor_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
+        actor_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
                                                                 self.args.max_grad_norm)
         update_policy.actor_optimizer.step()
         # unfreeze the Q networks
@@ -743,9 +750,16 @@ class R_MASAC:
             alpha_loss = torch.scalar_tensor(0.0)
             ent_diff = torch.scalar_tensor(0.0)
 
-        return (critic_loss, actor_loss, alpha_loss,
-                critic_update_grad_norm, actor_update_grad_norm,
-                update_policy.alpha, ent_diff), new_priorities, idxes
+        train_info = {}
+        train_info['critic_loss'] = critic_loss
+        train_info['actor_loss'] = actor_loss
+        train_info['alpha_loss'] = alpha_loss
+        train_info['critic_grad_norm'] = critic_grad_norm
+        train_info['actor_grad_norm'] = actor_grad_norm
+        train_info['alpha'] = update_policy.alpha
+        train_info['entropy'] = ent_diff
+
+        return train_info, new_priorities, idxes
 
     def prep_training(self):
         for policy in self.policies.values():

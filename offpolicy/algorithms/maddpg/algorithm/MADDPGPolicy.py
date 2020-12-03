@@ -77,12 +77,10 @@ class MADDPGPolicy:
                     batch_size = obs.shape[0]
                     eps = self.exploration.eval(t_env)
                     rand_numbers = np.random.rand(batch_size, 1)
-                    take_random = (rand_numbers < eps).astype(
-                        int).reshape(-1, 1)
+                    take_random = (rand_numbers < eps).astype(int).reshape(-1, 1)
 
                     # random actions sample uniformly from action space
-                    random_actions = [OneHotCategorical(logits=torch.ones(
-                        batch_size, self.act_dim[i])).sample() for i in range(len(self.act_dim))]
+                    random_actions = [OneHotCategorical(logits=torch.ones(batch_size, self.act_dim[i])).sample() for i in range(len(self.act_dim))]
                     random_actions = torch.cat(random_actions, dim=1)
                     actions = (1 - take_random) * onehot_actions.detach().cpu().numpy() + \
                         take_random * random_actions.detach().cpu().numpy()
@@ -90,12 +88,10 @@ class MADDPGPolicy:
                     actions = onehot_actions
             else:
                 if use_gumbel or explore:
-                    onehot_actions = gumbel_softmax(
-                        actor_out, available_actions, hard=True)  # gumbel has a gradient
+                    onehot_actions = gumbel_softmax(actor_out, available_actions, hard=True)  # gumbel has a gradient
                     actions = onehot_actions
                 else:
-                    onehot_actions = onehot_from_logits(
-                        actor_out, available_actions)  # no gradient
+                    onehot_actions = onehot_from_logits(actor_out, available_actions)  # no gradient
 
                 if explore:
                     # eps greedy exploration
@@ -103,18 +99,15 @@ class MADDPGPolicy:
                     rand_numbers = np.random.rand(batch_size, 1)
                     # random actions sample uniformly from action space
                     logits = torch.ones(batch_size, self.act_dim)
-                    random_actions = avail_choose(
-                        logits, available_actions).sample()
+                    random_actions = avail_choose(logits, available_actions).sample()
                     random_actions = make_onehot(random_actions, self.act_dim)
                     take_random = (rand_numbers < eps).astype(int)
-                    actions = (
-                        1 - take_random) * onehot_actions.detach().cpu().numpy() + take_random * random_actions
+                    actions = (1 - take_random) * onehot_actions.detach().cpu().numpy() + take_random * random_actions
                 else:
                     actions = onehot_actions
         else:
             if explore:
-                actions = gaussian_noise(
-                    actor_out.shape, self.args.act_noise_std) + actor_out
+                actions = gaussian_noise(actor_out.shape, self.args.act_noise_std) + actor_out
             else:
                 actions = actor_out
             # # clip the actions at the bounds of the action space

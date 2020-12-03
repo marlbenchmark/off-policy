@@ -140,8 +140,7 @@ class MASAC:
             new_priorities_1 = error_1.abs().detach().numpy().flatten()
             new_priorities_2 = error_2.abs().detach().numpy().flatten()
 
-            new_priorities = (new_priorities_1 +
-                              new_priorities_2) / 2 + self.per_eps
+            new_priorities = (new_priorities_1 + new_priorities_2) / 2 + self.per_eps
         else:
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).mean()
@@ -156,8 +155,7 @@ class MASAC:
         # optimizer step
         update_policy.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
-                                                                 self.args.max_grad_norm)
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(), self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
 
         # actor update
@@ -228,14 +226,11 @@ class MASAC:
             cent_act, dim=-1).repeat(num_update_agents, 1).float()
 
         # also repeat cent obs
-        stacked_cent_obs = np.tile(
-            cent_obs, (num_update_agents, 1)).astype(np.float32)
+        stacked_cent_obs = np.tile(cent_obs, (num_update_agents, 1)).astype(np.float32)
         # combine the buffer cent acts with actor cent acts and pass into buffer
-        actor_update_cent_acts = mask * \
-            actor_cent_acts + (1 - mask) * buffer_cent_acts
+        actor_update_cent_acts = mask * actor_cent_acts + (1 - mask) * buffer_cent_acts
 
-        actor_Q1, actor_Q2 = update_policy.critic(
-            stacked_cent_obs, actor_update_cent_acts)
+        actor_Q1, actor_Q2 = update_policy.critic(stacked_cent_obs, actor_update_cent_acts)
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss_unmeaned = update_policy.alpha * pol_logprobs - actor_Q
         # TODO: mask loss
@@ -246,20 +241,16 @@ class MASAC:
         update_policy.actor_optimizer.zero_grad()
         update_policy.critic_optimizer.zero_grad()
         actor_loss.backward()
-        actor_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
-                                                                self.args.max_grad_norm)
+        actor_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(), self.args.max_grad_norm)
         update_policy.actor_optimizer.step()
 
         # entropy temperature update
         if self.args.automatic_entropy_tune:
             # double check this loss calculation
             if isinstance(update_policy.target_entropy, np.ndarray):
-                update_policy.target_entropy = torch.FloatTensor(
-                    update_policy.target_entropy)
-            ent_diff_mean = (
-                pol_logprobs + update_policy.target_entropy).mean()
-            alpha_loss = -(
-                update_policy.log_alpha * (pol_logprobs + update_policy.target_entropy).detach())
+                update_policy.target_entropy = torch.FloatTensor(update_policy.target_entropy)
+            ent_diff_mean = (pol_logprobs + update_policy.target_entropy).mean()
+            alpha_loss = -(update_policy.log_alpha * (pol_logprobs + update_policy.target_entropy).detach())
 
             if alpha_loss.shape[-1] > 1:
                 alpha_loss = alpha_loss.mean(dim=-1).unsqueeze(-1)
@@ -280,9 +271,16 @@ class MASAC:
         for p in update_policy.critic.parameters():
             p.requires_grad = True
 
-        return (critic_loss, actor_loss, alpha_loss,
-                critic_update_grad_norm, actor_update_grad_norm,
-                update_policy.alpha, ent_diff_mean), new_priorities, idxes
+        train_info = {}
+        train_info['critic_loss'] = critic_loss
+        train_info['actor_loss'] = actor_loss
+        train_info['alpha_loss'] = alpha_loss
+        train_info['critic_grad_norm'] = critic_grad_norm
+        train_info['actor_grad_norm'] = actor_grad_norm
+        train_info['alpha'] = update_policy.alpha
+        train_info['entropy'] = ent_diff_mean
+
+        return train_info, new_priorities, idxes
 
     def cent_train_policy_on_batch(self, update_policy_id, batch, update_actor=None):
         obs_batch, cent_obs_batch, \
@@ -407,7 +405,7 @@ class MASAC:
 
         update_policy.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
 
@@ -489,7 +487,7 @@ class MASAC:
         update_policy.actor_optimizer.zero_grad()
         update_policy.critic_optimizer.zero_grad()
         actor_loss.backward()
-        actor_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
+        actor_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
                                                                 self.args.max_grad_norm)
         update_policy.actor_optimizer.step()
 
@@ -523,9 +521,16 @@ class MASAC:
         for p in update_policy.critic.parameters():
             p.requires_grad = True
 
-        return (critic_loss, actor_loss, alpha_loss,
-                critic_update_grad_norm, actor_update_grad_norm,
-                update_policy.alpha, ent_diff_mean), new_priorities, idxes
+        train_info = {}
+        train_info['critic_loss'] = critic_loss
+        train_info['actor_loss'] = actor_loss
+        train_info['alpha_loss'] = alpha_loss
+        train_info['critic_grad_norm'] = critic_grad_norm
+        train_info['actor_grad_norm'] = actor_grad_norm
+        train_info['alpha'] = update_policy.alpha
+        train_info['entropy'] = ent_diff_mean
+
+        return train_info, new_priorities, idxes
 
     def prep_training(self):
         for policy in self.policies.values():

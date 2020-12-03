@@ -252,11 +252,15 @@ class M_VDN:
 
         self.optimizer.zero_grad()
         loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            self.parameters, self.args.max_grad_norm)
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.parameters, self.args.max_grad_norm)
         self.optimizer.step()
 
-        return (loss, grad_norm, predicted_Q_tots.mean()), new_priorities, idxes
+        train_info = {}
+        train_info['loss'] = loss
+        train_info['grad_norm'] = grad_norm
+        train_info['Q_tot'] = predicted_Q_tots.mean()
+
+        return train_info, new_priorities, idxes
 
     def hard_target_updates(self):
         print("hard update targets")

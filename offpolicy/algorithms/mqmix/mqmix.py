@@ -31,8 +31,7 @@ class M_QMix:
             [agent_id for agent_id in range(self.num_agents) if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
         if self.use_popart:
-            self.value_normalizer = {policy_id: PopArt(
-                1) for policy_id in self.policies.keys()}
+            self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
 
         multidiscrete_list = None
         if any([isinstance(policy.act_dim, np.ndarray) for policy in self.policies.values()]):
@@ -41,12 +40,10 @@ class M_QMix:
                                   len(self.policy_agents[p_id]) for p_id in self.policy_ids]
 
         # mixer network       
-        self.mixer = M_QMixer(
-            args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
+        self.mixer = M_QMixer(args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
 
         # target policies/networks
-        self.target_policies = {p_id: copy.deepcopy(
-            self.policies[p_id]) for p_id in self.policy_ids}
+        self.target_policies = {p_id: copy.deepcopy(self.policies[p_id]) for p_id in self.policy_ids}
         self.target_mixer = copy.deepcopy(self.mixer)
 
         # collect all trainable parameters: each policy parameters, and the mixer parameters
@@ -55,8 +52,7 @@ class M_QMix:
             self.parameters += policy.parameters()
         self.parameters += self.mixer.parameters()
 
-        self.optimizer = torch.optim.Adam(
-            params=self.parameters, lr=self.lr, eps=self.opti_eps)
+        self.optimizer = torch.optim.Adam(params=self.parameters, lr=self.lr, eps=self.opti_eps)
 
         if args.double_q:
             print("double Q learning will be used")
@@ -64,26 +60,21 @@ class M_QMix:
     def train_policy_on_batch(self, batch, use_same_share_obs):
         # unpack the batch
         obs_batch, cent_obs_batch, \
-            act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
-            dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
+        act_batch, rew_batch, \
+        nobs_batch, cent_nobs_batch, \
+        dones_batch, dones_env_batch, \
+        avail_act_batch, navail_act_batch, \
+        importance_weights, idxes = batch
 
         if use_same_share_obs:
-            cent_obs_batch = torch.FloatTensor(
-                cent_obs_batch[self.policy_ids[0]])
-            cent_nobs_batch = torch.FloatTensor(
-                cent_nobs_batch[self.policy_ids[0]])
+            cent_obs_batch = torch.FloatTensor(cent_obs_batch[self.policy_ids[0]])
+            cent_nobs_batch = torch.FloatTensor(cent_nobs_batch[self.policy_ids[0]])
         else:
             choose_agent_id = 0
-            cent_obs_batch = torch.FloatTensor(
-                cent_obs_batch[self.policy_ids[0]][choose_agent_id])
-            cent_nobs_batch = torch.FloatTensor(
-                cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_obs_batch = torch.FloatTensor(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_nobs_batch = torch.FloatTensor(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
 
-        dones_env_batch = torch.FloatTensor(
-            dones_env_batch[self.policy_ids[0]])
+        dones_env_batch = torch.FloatTensor(dones_env_batch[self.policy_ids[0]])
 
         # individual agent q value sequences: each element is of shape (batch_size, 1)
         agent_q_sequences = []
@@ -104,10 +95,8 @@ class M_QMix:
             stacked_nobs_batch = torch.cat(list(curr_nobs_batch), dim=-2)
 
             if navail_act_batch[p_id] is not None:
-                curr_navail_act_batch = torch.FloatTensor(
-                    navail_act_batch[p_id])
-                stacked_navail_act_batch = torch.cat(
-                    list(curr_navail_act_batch), dim=-2)
+                curr_navail_act_batch = torch.FloatTensor(navail_act_batch[p_id])
+                stacked_navail_act_batch = torch.cat(list(curr_navail_act_batch), dim=-2)
             else:
                 stacked_navail_act_batch = None
 
@@ -144,8 +133,7 @@ class M_QMix:
                 pol_agents_q_out_sequence = pol_q_out_sequence.split(
                     split_size=batch_size, dim=-2)
 
-            agent_q_sequences.append(
-                torch.cat(pol_agents_q_out_sequence, dim=-1))
+            agent_q_sequences.append(torch.cat(pol_agents_q_out_sequence, dim=-1))
 
             with torch.no_grad():
                 if self.args.double_q:
@@ -202,8 +190,7 @@ class M_QMix:
         next_step_Q_tot_vals = []
 
         curr_Q_tot = self.mixer(agent_q_sequences, cent_obs_batch)
-        next_step_Q_tot = self.target_mixer(
-            agent_next_q_sequences, cent_nobs_batch)
+        next_step_Q_tot = self.target_mixer(agent_next_q_sequences, cent_nobs_batch)
 
         predicted_Q_tot_vals.append(curr_Q_tot.squeeze(-1))
         next_step_Q_tot_vals.append(next_step_Q_tot.squeeze(-1))
@@ -219,14 +206,12 @@ class M_QMix:
                 self.value_normalizer[p_id].denormalize(next_step_Q_tot_vals)
             Q_tot_targets = self.value_normalizer[p_id](Q_tot_targets)
         else:
-            Q_tot_targets = rewards + \
-                (1 - dones_env_batch) * self.args.gamma * next_step_Q_tot_vals
+            Q_tot_targets = rewards + (1 - dones_env_batch) * self.args.gamma * next_step_Q_tot_vals
         # form mask to mask out sequence elements corresponding to states at which the episode already ended
         predicted_Q_tots = predicted_Q_tot_vals
 
         if self.use_value_active_masks:
-            curr_agent_dones = torch.FloatTensor(
-                dones_batch[p_id][choose_agent_id])
+            curr_agent_dones = torch.FloatTensor(dones_batch[p_id][choose_agent_id])
             predicted_Q_tots = predicted_Q_tots * (1 - curr_agent_dones)
             Q_tot_targets = Q_tot_targets * (1 - curr_agent_dones)
 
@@ -252,11 +237,15 @@ class M_QMix:
 
         self.optimizer.zero_grad()
         loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            self.parameters, self.args.max_grad_norm)
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.parameters, self.args.max_grad_norm)
         self.optimizer.step()
 
-        return (loss, grad_norm, predicted_Q_tots.mean()), new_priorities, idxes
+        train_info = {}
+        train_info['loss'] = loss
+        train_info['grad_norm'] = grad_norm
+        train_info['Q_tot'] = predicted_Q_tots.mean()
+
+        return train_info, new_priorities, idxes
 
     def hard_target_updates(self):
         print("hard update targets")

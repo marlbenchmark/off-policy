@@ -74,16 +74,12 @@ class VDN:
             importance_weights, idxes = batch
 
         if use_same_share_obs:
-            cent_obs_batch = torch.FloatTensor(
-                cent_obs_batch[self.policy_ids[0]])
-            cent_nobs_batch = torch.FloatTensor(
-                cent_nobs_batch[self.policy_ids[0]])
+            cent_obs_batch = torch.FloatTensor(cent_obs_batch[self.policy_ids[0]])
+            cent_nobs_batch = torch.FloatTensor(cent_nobs_batch[self.policy_ids[0]])
         else:
             choose_agent_id = 0
-            cent_obs_batch = torch.FloatTensor(
-                cent_obs_batch[self.policy_ids[0]][choose_agent_id])
-            cent_nobs_batch = torch.FloatTensor(
-                cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_obs_batch = torch.FloatTensor(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_nobs_batch = torch.FloatTensor(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
 
         dones_env_batch = torch.FloatTensor(
             dones_env_batch[self.policy_ids[0]])
@@ -107,10 +103,8 @@ class VDN:
             stacked_nobs_batch = torch.cat(list(curr_nobs_batch), dim=-2)
 
             if navail_act_batch[p_id] is not None:
-                curr_navail_act_batch = torch.FloatTensor(
-                    navail_act_batch[p_id])
-                stacked_navail_act_batch = torch.cat(
-                    list(curr_navail_act_batch), dim=-2)
+                curr_navail_act_batch = torch.FloatTensor(navail_act_batch[p_id])
+                stacked_navail_act_batch = torch.cat(list(curr_navail_act_batch), dim=-2)
             else:
                 stacked_navail_act_batch = None
 
@@ -226,11 +220,9 @@ class VDN:
                                                                       explore=False)
 
                 # separate the next qs into sequences for each agent
-                pol_agents_nq_sequence = targ_pol_nq_seq.split(
-                    split_size=batch_size, dim=-2)
+                pol_agents_nq_sequence = targ_pol_nq_seq.split(split_size=batch_size, dim=-2)
             # cat target qs along the final dim
-            agent_next_q_sequences.append(
-                torch.cat(pol_agents_nq_sequence, dim=-1))
+            agent_next_q_sequences.append(torch.cat(pol_agents_nq_sequence, dim=-1))
 
         # combine the agent q value sequences to feed into mixer networks
         agent_q_sequences = torch.cat(agent_q_sequences, dim=-1)
@@ -258,28 +250,23 @@ class VDN:
         next_step_Q_tot_vals = torch.stack(next_step_Q_tot_vals)
 
         # all agents must share reward, so get the reward sequence for an agent
-        curr_env_dones = torch.cat(
-            (torch.zeros(1, batch_size, 1).float(), dones_env_batch[:self.episode_length - 1, :, :]))
+        curr_env_dones = torch.cat((torch.zeros(1, batch_size, 1).float(), dones_env_batch[:self.episode_length - 1, :, :]))
 
         # form bootstrapped targets
         #import pdb; pdb.set_trace()
         if self.use_popart:
-            Q_tot_targets = rewards + (1 - dones_env_batch) * self.args.gamma * \
-                self.value_normalizer[p_id](next_step_Q_tot_vals)
+            Q_tot_targets = rewards + (1 - dones_env_batch) * self.args.gamma * self.value_normalizer[p_id](next_step_Q_tot_vals)
             nodones_Q_tot_targets = Q_tot_targets[curr_env_dones == 0]
-            Q_tot_targets[curr_env_dones == 0] = self.value_normalizer[p_id].denormalizer(
-                nodones_Q_tot_targets)
+            Q_tot_targets[curr_env_dones == 0] = self.value_normalizer[p_id].denormalizer(nodones_Q_tot_targets)
         else:
-            Q_tot_targets = rewards + \
-                (1 - dones_env_batch) * self.args.gamma * next_step_Q_tot_vals
+            Q_tot_targets = rewards + (1 - dones_env_batch) * self.args.gamma * next_step_Q_tot_vals
         # form mask to mask out sequence elements corresponding to states at which the episode already ended
 
         predicted_Q_tots = predicted_Q_tot_vals * (1 - curr_env_dones)
         Q_tot_targets = Q_tot_targets * (1 - curr_env_dones)
 
         if self.use_value_active_masks:
-            curr_agent_dones = torch.FloatTensor(
-                dones_batch[p_id][choose_agent_id])
+            curr_agent_dones = torch.FloatTensor(dones_batch[p_id][choose_agent_id])
             predicted_Q_tots = predicted_Q_tots * (1 - curr_agent_dones)
             Q_tot_targets = Q_tot_targets * (1 - curr_agent_dones)
 
@@ -288,27 +275,21 @@ class VDN:
 
         if self.use_per:
             if self.use_huber_loss:
-                per_batch_error = huber_loss(
-                    error, self.huber_delta).sum(dim=0).flatten()
+                per_batch_error = huber_loss(error, self.huber_delta).sum(dim=0).flatten()
             else:
                 per_batch_error = mse_loss(error).sum(dim=0).flatten()
-            importance_weight_error = per_batch_error * \
-                torch.FloatTensor(importance_weights)
+            importance_weight_error = per_batch_error * torch.FloatTensor(importance_weights)
             loss = importance_weight_error.sum() / (1 - curr_env_dones).sum()
 
             # new priorities are a combination of the maximum TD error across sequence and the mean TD error across sequence
-            td_errors = (predicted_Q_tots -
-                         Q_tot_targets).abs().detach().numpy()
-            new_priorities = ((1 - self.args.per_nu) * td_errors.mean(axis=0) +
-                              self.args.per_nu * td_errors.max(axis=0)).flatten() + self.per_eps
+            td_errors = (predicted_Q_tots - Q_tot_targets).abs().detach().numpy()
+            new_priorities = ((1 - self.args.per_nu) * td_errors.mean(axis=0) + self.args.per_nu * td_errors.max(axis=0)).flatten() + self.per_eps
         else:
             if self.use_huber_loss:
-                loss = huber_loss(error, self.huber_delta).sum(
-                ) / (1 - curr_env_dones).sum()
+                loss = huber_loss(error, self.huber_delta).sum() / (1 - curr_env_dones).sum()
             else:
                 if self.use_value_active_masks:
-                    loss = mse_loss(error).sum(
-                    ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                    loss = mse_loss(error).sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
                 else:
                     loss = mse_loss(error).sum() / (1 - curr_env_dones).sum()
             new_priorities = None
@@ -319,20 +300,23 @@ class VDN:
             self.parameters, self.args.max_grad_norm)
         self.optimizer.step()
 
-        return (loss, grad_norm, predicted_Q_tots.mean()), new_priorities, idxes
+        train_info = {}
+        train_info['loss'] = loss
+        train_info['grad_norm'] = grad_norm
+        train_info['Q_tot'] = predicted_Q_tots.mean()
+
+        return train_info, new_priorities, idxes
 
     def hard_target_updates(self):
         print("hard update targets")
         for policy_id in self.policy_ids:
-            self.target_policies[policy_id].load_state(
-                self.policies[policy_id])
+            self.target_policies[policy_id].load_state(self.policies[policy_id])
         if self.mixer is not None:
             self.target_mixer.load_state_dict(self.mixer.state_dict())
 
     def soft_target_updates(self):
         for policy_id in self.policy_ids:
-            soft_update(
-                self.target_policies[policy_id], self.policies[policy_id], self.tau)
+            soft_update(self.target_policies[policy_id], self.policies[policy_id], self.tau)
         if self.mixer is not None:
             soft_update(self.target_mixer, self.mixer, self.tau)
 

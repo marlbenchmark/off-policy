@@ -109,6 +109,8 @@ class R_MATD3:
             avail_act_batch, navail_act_batch, \
             importance_weights, idxes = batch
 
+        train_info = {}
+
         # obs_batch: dict mapping policy id to batches where each batch is shape (# agents, ep_len, batch_size, obs_dim)
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
@@ -228,9 +230,12 @@ class R_MATD3:
 
         update_policy.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
+
+        train_info['critic_loss'] = critic_loss        
+        train_info['critic_grad_norm'] = critic_grad_norm
 
         if update_actor:
             # freeze Q-networks
@@ -347,16 +352,17 @@ class R_MATD3:
             update_policy.critic_optimizer.zero_grad()
             update_policy.actor_optimizer.zero_grad()
             actor_loss.backward()
-            actor_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
+            actor_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
                                                                     self.args.max_grad_norm)
             update_policy.actor_optimizer.step()
             # unfreeze the Q networks
             for p in update_policy.critic.parameters():
                 p.requires_grad = True
 
-            return (critic_loss, actor_loss, None, critic_update_grad_norm, actor_update_grad_norm, None, None), new_priorities, idxes
+            train_info['actor_loss'] = actor_loss
+            train_info['actor_grad_norm'] = actor_grad_norm
 
-        return (critic_loss, None, None, critic_update_grad_norm, None, None, None), new_priorities, idxes
+        return train_info, new_priorities, idxes
 
     def cent_train_policy_on_batch(self, update_policy_id, batch, update_actor):
         # unpack the batch
@@ -366,6 +372,9 @@ class R_MATD3:
             dones_batch, dones_env_batch, \
             avail_act_batch, navail_act_batch, \
             importance_weights, idxes = batch
+
+        train_info = {}
+
         # obs_batch: dict mapping policy id to batches where each batch is shape (# agents, ep_len, batch_size, obs_dim)
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
@@ -526,9 +535,12 @@ class R_MATD3:
 
         update_policy.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.critic.parameters(),
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
+
+        train_info['critic_loss'] = critic_loss
+        train_info['critic_grad_norm'] = critic_grad_norm
 
         if update_actor:
             # actor update: can form losses for each agent that the update policy controls
@@ -643,7 +655,7 @@ class R_MATD3:
             update_policy.critic_optimizer.zero_grad()
             update_policy.actor_optimizer.zero_grad()
             actor_loss.backward()
-            actor_update_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
+            actor_grad_norm = torch.nn.utils.clip_grad_norm_(update_policy.actor.parameters(),
                                                                     self.args.max_grad_norm)
             update_policy.actor_optimizer.step()
 
@@ -651,9 +663,10 @@ class R_MATD3:
             for p in update_policy.critic.parameters():
                 p.requires_grad = True
 
-            return (critic_loss, actor_loss, None, critic_update_grad_norm, actor_update_grad_norm, None, None), new_priorities, idxes
+            train_info['actor_loss'] = actor_loss
+            train_info['actor_grad_norm'] = actor_grad_norm
 
-        return (critic_loss, None, None, critic_update_grad_norm, None, None, None), new_priorities, idxes
+        return train_info, new_priorities, idxes
 
     def prep_training(self):
         for policy in self.policies.values():
