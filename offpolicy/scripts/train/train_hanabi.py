@@ -14,7 +14,7 @@ from offpolicy.config import get_config
 
 from offpolicy.utils.util import get_cent_act_dim, get_dim_from_space
 from offpolicy.envs.hanabi.Hanabi_Env import HanabiEnv
-from offpolicy.envs.env_wrappers import ShareDummyVecEnv, ShareSubprocVecEnv
+from offpolicy.envs.env_wrappers import ShareDummyVecEnv, ShareSubprocVecEnv, ChooseDummyVecEnv, ChooseSubprocVecEnv
 
 
 def make_train_env(all_args):
@@ -51,6 +51,41 @@ def make_eval_env(all_args):
         return ShareDummyVecEnv([get_env_fn(0)])
     else:
         return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
+
+def make_train_env_choose(all_args):
+    def get_env_fn(rank):
+        def init_env():
+            if all_args.env_name == "Hanabi":
+                env = HanabiEnv(all_args)
+            else:
+                print("Can not support the " +
+                      all_args.env_name + "environment.")
+                raise NotImplementedError
+            env.seed(all_args.seed + rank * 1000)
+            return env
+        return init_env
+    if all_args.n_rollout_threads == 1:
+        return ChooseDummyVecEnv([get_env_fn(0)])
+    else:
+        return ChooseSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
+
+
+def make_eval_env_choose(all_args):
+    def get_env_fn(rank):
+        def init_env():
+            if all_args.env_name == "Hanabi":
+                env = HanabiEnv(all_args)
+            else:
+                print("Can not support the " +
+                      all_args.env_name + "environment.")
+                raise NotImplementedError
+            env.seed(all_args.seed * 50000 + rank * 10000)
+            return env
+        return init_env
+    if all_args.n_eval_rollout_threads == 1:
+        return ChooseDummyVecEnv([get_env_fn(0)])
+    else:
+        return ChooseSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
 
 
 def parse_args(args, parser):
@@ -124,7 +159,20 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
-    env = make_train_env(all_args)
+    # choose algo
+    if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac", "qmix", "vdn"]:
+        from offpolicy.runner.rnn.hanabi_runner import HanabiRunner as Runner
+        assert all_args.n_rollout_threads == 1, ("only support 1 env in recurrent version.")
+        env = make_train_env(all_args)
+        eval_env = env
+    elif all_args.algorithm_name in ["matd3", "maddpg", "masac", "mqmix", "mvdn"]:
+        from offpolicy.runner.mlp.hanabi_runner import HanabiRunner as Runner
+        env = make_train_env_choose(all_args)
+        eval_env = make_eval_env_choose(all_args)
+    else:
+        raise NotImplementedError
+
+    
     num_agents = all_args.num_agents
 
     # create policies and mapping fn
@@ -150,16 +198,7 @@ def main(args):
 
         def policy_mapping_fn(agent_id): return 'policy_' + str(agent_id)
 
-    # choose algo
-    if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac", "qmix", "vdn"]:
-        from offpolicy.runner.rnn.hanabi_runner import RecRunner as Runner
-        assert all_args.n_rollout_threads == 1, ("only support 1 env in recurrent version.")
-        eval_env = env
-    elif all_args.algorithm_name in ["matd3", "maddpg", "masac", "mqmix", "mvdn"]:
-        from offpolicy.runner.mlp.hanabi_runner import MlpRunner as Runner
-        eval_env = make_eval_env(all_args)
-    else:
-        raise NotImplementedError
+    
 
     config = {"args": all_args,
               "policy_info": policy_info,

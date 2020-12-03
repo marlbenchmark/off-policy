@@ -41,7 +41,7 @@ class MlpReplayBuffer(object):
         return idx_range
 
     def sample(self, batch_size):
-        inds = np.random.choice(self.filled_i, batch_size)
+        inds = np.random.choice(len(self), batch_size)
         obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, avail_acts, next_avail_acts = {
         }, {}, {}, {}, {}, {}, {}, {}, {}, {}
         for p_id in self.policy_info.keys():

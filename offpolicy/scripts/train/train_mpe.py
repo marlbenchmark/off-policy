@@ -153,12 +153,12 @@ def main(args):
 
     # choose algo
     if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac", "qmix", "vdn"]:
-        from offpolicy.runner.rnn.mpe_runner import RecRunner as Runner
+        from offpolicy.runner.rnn.mpe_runner import MPERunner as Runner
         assert all_args.n_rollout_threads == 1, (
             "only support 1 env in recurrent version.")
         eval_env = env
     elif all_args.algorithm_name in ["matd3", "maddpg", "masac", "mqmix", "mvdn"]:
-        from offpolicy.runner.mlp.mpe_runner import MlpRunner as Runner
+        from offpolicy.runner.mlp.mpe_runner import MPERunner as Runner
         eval_env = make_eval_env(all_args)
     else:
         raise NotImplementedError

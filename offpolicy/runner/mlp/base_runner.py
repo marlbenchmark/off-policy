@@ -1,21 +1,22 @@
 import os
+import wandb
 import numpy as np
 from itertools import chain
-import wandb
-import torch
 from tensorboardX import SummaryWriter
+import torch
 import time
 
-from offpolicy.utils.rec_buffer import RecReplayBuffer, PrioritizedRecReplayBuffer
+from offpolicy.utils.mlp_buffer import MlpReplayBuffer, PrioritizedMlpReplayBuffer
 from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
 
-class RecRunner(object):
+
+class MlpRunner(object):
 
     def __init__(self, config):
         # non-tunable hyperparameters are in args
         self.args = config["args"]
         self.device = config["device"]
-        self.q_learning = ["qmix","vdn"]
+        self.q_learning = ["mqix","mvdn"]
 
         # set tunable hyperparameters
         self.share_policy = self.args.share_policy
@@ -24,7 +25,6 @@ class RecRunner(object):
         self.num_env_steps = self.args.num_env_steps
         self.use_wandb = self.args.use_wandb
         self.use_reward_normalization = self.args.use_reward_normalization
-        self.use_popart = self.args.use_popart
         self.use_per = self.args.use_per
         self.per_alpha = self.args.per_alpha
         self.per_beta_start = self.args.per_beta_start
@@ -32,10 +32,8 @@ class RecRunner(object):
         self.batch_size = self.args.batch_size
         self.hidden_size = self.args.hidden_size
         self.use_soft_update = self.args.use_soft_update
-        self.hard_update_interval_episode = self.args.hard_update_interval_episode
-        self.popart_update_interval_step = self.args.popart_update_interval_step
+        self.hard_update_interval = self.args.hard_update_interval
         self.actor_train_interval_step = self.args.actor_train_interval_step
-        self.train_interval_episode = self.args.train_interval_episode
         self.train_interval = self.args.train_interval
         self.use_eval = self.args.use_eval
         self.eval_interval = self.args.eval_interval
@@ -45,13 +43,11 @@ class RecRunner(object):
         self.total_env_steps = 0  # total environment interactions collected during training
         self.num_episodes_collected = 0  # total episodes collected during training
         self.total_train_steps = 0  # number of gradient updates performed
-        # last episode after which a gradient update was performed
-        self.last_train_episode = 0
         self.last_train_T = 0
         self.last_eval_T = 0  # last episode after which a eval run was conducted
         self.last_save_T = 0  # last epsiode after which the models were saved
         self.last_log_T = 0
-        self.last_hard_update_episode = 0
+        self.last_hard_update_T = 0
 
         if config.__contains__("take_turn"):
             self.take_turn = config["take_turn"]
@@ -68,18 +64,7 @@ class RecRunner(object):
         else:
             self.use_avail_acts = False
 
-        if config.__contains__("buffer_length"):
-            self.episode_length = config["buffer_length"]
-            if self.args.naive_recurrent_policy:
-                self.data_chunk_length = config["buffer_length"]
-            else:
-                self.data_chunk_length = self.args.data_chunk_length
-        else:
-            self.episode_length = self.args.episode_length
-            if self.args.naive_recurrent_policy:
-                self.data_chunk_length = self.args.episode_length
-            else:
-                self.data_chunk_length = self.args.data_chunk_length
+        self.episode_length = self.args.episode_length
 
         self.policy_info = config["policy_info"]
         self.policy_ids = sorted(list(self.policy_info.keys()))
@@ -90,7 +75,8 @@ class RecRunner(object):
 
         self.env = config["env"]
         self.eval_env = config["eval_env"]
-        self.num_envs = 1
+        self.num_envs = self.env.num_envs
+        self.num_eval_envs = self.eval_env.num_envs
 
         # dir
         self.model_dir = self.args.model_dir
@@ -107,41 +93,39 @@ class RecRunner(object):
                 os.makedirs(self.save_dir)
 
         # initialize all the policies and organize the agents corresponding to each policy
-        if self.algorithm_name == "rmatd3":
-            from offpolicy.algorithms.r_matd3.algorithm.rMATD3Policy import R_MATD3Policy as Policy
-            from offpolicy.algorithms.r_matd3.r_matd3 import R_MATD3 as TrainAlgo
-        elif self.algorithm_name == "rmaddpg":
-            assert self.actor_train_interval_step == 1, (
-                "rmaddpg only support actor_train_interval_step=1.")
-            from offpolicy.algorithms.r_maddpg.algorithm.rMADDPGPolicy import R_MADDPGPolicy as Policy
-            from offpolicy.algorithms.r_maddpg.r_maddpg import R_MADDPG as TrainAlgo
-        elif self.algorithm_name == "rmasac":
-            assert self.actor_train_interval_step == 1, (
-                "rmasac only support actor_train_interval_step=1.")
-            from offpolicy.algorithms.r_masac.algorithm.rMASACPolicy import R_MASACPolicy as Policy
-            from offpolicy.algorithms.r_masac.r_masac import R_MASAC as TrainAlgo
-        elif self.algorithm_name == "qmix":
-            from offpolicy.algorithms.qmix.algorithm.QMixPolicy import QMixPolicy as Policy
-            from offpolicy.algorithms.qmix.qmix import QMix as TrainAlgo
-        elif self.algorithm_name == "vdn":
-            from offpolicy.algorithms.vdn.algorithm.VDNPolicy import VDNPolicy as Policy
-            from offpolicy.algorithms.vdn.vdn import VDN as TrainAlgo
+        if self.algorithm_name == "matd3":
+            from offpolicy.algorithms.matd3.algorithm.MATD3Policy import MATD3Policy as Policy
+            from offpolicy.algorithms.matd3.matd3 import MATD3 as TrainAlgo
+        elif self.algorithm_name == "maddpg":
+            assert self.actor_train_interval_step == 1, ("maddpg only support actor_train_interval_step=1.")
+            from offpolicy.algorithms.maddpg.algorithm.MADDPGPolicy import MADDPGPolicy as Policy
+            from offpolicy.algorithms.maddpg.maddpg import MADDPG as TrainAlgo
+        elif self.algorithm_name == "masac":
+            assert self.actor_train_interval_step == 1, ("masac only support actor_train_interval_step=1.")
+            from offpolicy.algorithms.masac.algorithm.MASACPolicy import MASACPolicy as Policy
+            from offpolicy.algorithms.masac.masac import MASAC as TrainAlgo
+        elif self.algorithm_name == "mqmix":
+            from offpolicy.algorithms.mqmix.algorithm.mQMixPolicy import M_QMixPolicy as Policy
+            from offpolicy.algorithms.mqmix.mqmix import M_QMix as TrainAlgo
+        elif self.algorithm_name == "mvdn":
+            from offpolicy.algorithms.mvdn.algorithm.mVDNPolicy import M_VDNPolicy as Policy
+            from offpolicy.algorithms.mvdn.mvdn import M_VDN as TrainAlgo
         else:
             raise NotImplementedError
-        
+
         self.collecter = self.collect_rollout
-        self.saver = self.save_q if self.algorithm_name in self.q_learning else self.save        
-        self.restorer = self.restore_q if self.algorithm_name in self.q_learning else self.restore
+        self.saver = self.save_q if self.algorithm_name in self.q_learning else self.save
         self.train = self.batch_train_q if self.algorithm_name in self.q_learning else self.batch_train
+        self.restorer = self.restore_q if self.algorithm_name in self.q_learning else self.restore
 
         self.policies = {p_id: Policy(config, self.policy_info[p_id]) for p_id in self.policy_ids}
 
         if self.model_dir is not None:
             self.restorer()
 
-        # initialize rmaddpg class for updating policies
+        # initialize class for updating policies
         self.trainer = TrainAlgo(self.args, self.num_agents, self.policies, self.policy_mapping_fn,
-                                 device=self.device, episode_length=self.episode_length)
+                                 device=self.device)
 
         self.policy_agents = {policy_id: sorted(
             [agent_id for agent_id in self.agent_ids if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
@@ -154,40 +138,32 @@ class RecRunner(object):
         self.policy_central_obs_dim = {
             policy_id: self.policies[policy_id].central_obs_dim for policy_id in self.policy_ids}
 
-        num_train_episodes = (self.num_env_steps / self.episode_length) / (self.train_interval_episode)
+        num_train_iters = self.num_env_steps / self.train_interval
         self.beta_anneal = DecayThenFlatSchedule(
-            self.per_beta_start, 1.0, num_train_episodes, decay="linear")
+            self.per_beta_start, 1.0, num_train_iters, decay="linear")
 
         if self.use_per:
-            self.buffer = PrioritizedRecReplayBuffer(self.per_alpha,
+            self.buffer = PrioritizedMlpReplayBuffer(self.per_alpha,
                                                      self.policy_info,
                                                      self.policy_agents,
                                                      self.buffer_size,
-                                                     self.episode_length,
                                                      self.use_same_share_obs,
                                                      self.use_avail_acts,
                                                      self.use_reward_normalization)
         else:
-            self.buffer = RecReplayBuffer(self.policy_info,
+            self.buffer = MlpReplayBuffer(self.policy_info,
                                           self.policy_agents,
                                           self.buffer_size,
-                                          self.episode_length,
                                           self.use_same_share_obs,
                                           self.use_avail_acts,
                                           self.use_reward_normalization)
-    
+
     def run(self):
         # collect data
         self.trainer.prep_rollout()
         env_info = self.collecter(explore=True, training_episode=True, warmup=False)
         for k, v in env_info.items():
             self.env_infos[k].append(v)
-
-        # train
-        if ((self.num_episodes_collected - self.last_train_episode) / self.train_interval_episode) >= 1 or self.last_train_episode == 0:
-            self.train()
-            self.total_train_steps += 1
-            self.last_train_episode = self.num_episodes_collected
 
         # save
         if (self.total_env_steps - self.last_save_T) / self.save_interval >= 1:
@@ -205,24 +181,11 @@ class RecRunner(object):
             self.last_eval_T = self.total_env_steps
 
         return self.total_env_steps
-    
-    @torch.no_grad()
-    def warmup(self, num_warmup_episodes):
-        # fill replay buffer with enough episodes to begin training
-        self.trainer.prep_rollout()
-        warmup_rewards = []
-        print("warm up...")
-        for _ in range((num_warmup_episodes // self.num_envs) + 1):
-            env_info = self.collecter(explore=True, training_episode=False, warmup=True)
-            warmup_rewards.append(env_info['average_episode_rewards'])
-        warmup_reward = np.mean(warmup_rewards)
-        print("warmup average episode rewards: {}".format(warmup_reward))
 
     def batch_train(self):
         self.trainer.prep_training()
         # do a gradient update if the number of episodes collected since the last training update exceeds the specified amount
-        update_actor = ((self.total_train_steps %
-                         self.actor_train_interval_step) == 0)
+        update_actor = ((self.total_train_steps % self.actor_train_interval_step) == 0)
         # gradient updates
         self.train_infos = []
         for p_id in self.policy_ids:
@@ -245,17 +208,15 @@ class RecRunner(object):
             for pid in self.policy_ids:
                 self.policies[pid].soft_target_updates()
         else:
-            if ((self.num_episodes_collected - self.last_hard_update_episode) / self.hard_update_interval_episode) >= 1:
+            if ((self.total_env_steps - self.last_hard_update_T) / self.hard_update_interval) >= 1:
                 for pid in self.policy_ids:
                     self.policies[pid].hard_target_updates()
-                self.last_hard_update_episode = self.num_episodes_collected
+                self.last_hard_update_T = self.total_env_steps
 
     def batch_train_q(self):
         self.trainer.prep_training()
-        update_popart = ((self.total_train_steps % self.popart_update_interval_step) == 0)
         # gradient updates
         self.train_infos = []
-
         for p_id in self.policy_ids:
             if self.use_per:
                 beta = self.beta_anneal.eval(self.total_train_steps)
@@ -263,8 +224,7 @@ class RecRunner(object):
             else:
                 sample = self.buffer.sample(self.batch_size)
 
-            train_info, new_priorities, idxes = self.trainer.train_policy_on_batch(
-                sample, self.use_same_share_obs, update_popart)
+            train_info, new_priorities, idxes = self.trainer.train_policy_on_batch(sample, self.use_same_share_obs)
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)
@@ -274,9 +234,9 @@ class RecRunner(object):
         if self.use_soft_update:
             self.trainer.soft_target_updates()
         else:
-            if (self.num_episodes_collected - self.last_hard_update_episode) / self.hard_update_interval_episode >= 1:
+            if (self.total_env_steps - self.last_hard_update_T) / self.hard_update_interval >= 1:
                 self.trainer.hard_target_updates()
-                self.last_hard_update_episode = self.num_episodes_collected
+                self.last_hard_update_T = self.total_env_steps
 
     def save(self):
         for pid in self.policy_ids:
@@ -326,6 +286,18 @@ class RecRunner(object):
             
         policy_mixer_state_dict = torch.load(str(self.model_dir) + '/mixer.pt')
         self.trainer.mixer.load_state_dict(policy_mixer_state_dict)
+
+    @torch.no_grad()
+    def warmup(self, num_warmup_episodes):
+        # fill replay buffer with enough episodes to begin training
+        self.trainer.prep_rollout()
+        warmup_rewards = []
+        print("warm up...")
+        for _ in range(int(num_warmup_episodes // self.num_envs) + 1):
+            env_info = self.collecter(explore=True, training_episode=False, warmup=True)
+            warmup_rewards.append(env_info['average_step_rewards'])
+        warmup_reward = np.mean(warmup_rewards)
+        print("warmup average step rewards: {}".format(warmup_reward))
 
     def log(self):
         raise NotImplementedError

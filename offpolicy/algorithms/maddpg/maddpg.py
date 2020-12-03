@@ -273,13 +273,13 @@ class MADDPG:
 
         # critic update
         update_policy.critic_optimizer.zero_grad()
-        all_agent_rewards = torch.from_numpy(all_agent_rewards).view(-1, 1)
-        all_env_dones = torch.from_numpy(all_env_dones).view(-1, 1).float()
-        all_agent_dones = torch.from_numpy(dones).view(-1, 1).float()
+        all_agent_rewards = torch.from_numpy(all_agent_rewards).reshape(-1, 1)
+        all_env_dones = torch.from_numpy(all_env_dones).reshape(-1, 1).float()
+        all_agent_dones = torch.from_numpy(dones).reshape(-1, 1).float()
         # critic update
         with torch.no_grad():
             next_step_Q = update_policy.target_critic(
-                all_agent_cent_nobs, all_agent_cent_nact).view(-1, 1)
+                all_agent_cent_nobs, all_agent_cent_nact).reshape(-1, 1)
         if self.use_popart:
             target_Qs = all_agent_rewards + self.args.gamma * \
                 (1 - all_env_dones) * \
@@ -289,7 +289,7 @@ class MADDPG:
             target_Qs = all_agent_rewards + self.args.gamma * \
                 (1 - all_env_dones) * next_step_Q
         predicted_Qs = update_policy.critic(
-            all_agent_cent_obs, all_agent_cent_act_buffer).view(-1, 1)
+            all_agent_cent_obs, all_agent_cent_act_buffer).reshape(-1, 1)
 
         error = target_Qs.detach().float() - predicted_Qs
         if self.use_per:
