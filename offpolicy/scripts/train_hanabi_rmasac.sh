@@ -2,7 +2,7 @@
 env="Hanabi"
 hanabi="Hanabi-Small"
 num_agents=2
-algo="rmasac"
+algo="rmasac-dis"
 exp="newturn"
 seed_max=1
 

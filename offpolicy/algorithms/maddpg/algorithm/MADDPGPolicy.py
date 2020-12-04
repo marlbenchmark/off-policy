@@ -22,18 +22,18 @@ class MADDPGPolicy:
         self.obs_space = policy_config["obs_space"]
         self.obs_dim = get_dim_from_space(self.obs_space)
         self.act_space = policy_config["act_space"]
-        self.discrete_action = is_discrete(self.act_space)
+        self.discrete = is_discrete(self.act_space)
         self.multidiscrete = is_multidiscrete(self.act_space)
 
         self.act_dim = get_dim_from_space(self.act_space)
 
         self.actor = Actor(self.args, self.obs_dim,
-                           self.act_dim, self.discrete_action, self.device)
+                           self.act_dim, self.device)
         self.critic = Critic(self.args, self.central_obs_dim,
                              self.central_act_dim, self.device)
 
         self.target_actor = Actor(
-            self.args, self.obs_dim, self.act_dim, self.discrete_action, self.device)
+            self.args, self.obs_dim, self.act_dim, self.device)
         self.target_critic = Critic(
             self.args, self.central_obs_dim, self.central_act_dim, self.device)
 
@@ -51,9 +51,7 @@ class MADDPGPolicy:
                 # eps greedy exploration
                 self.exploration = DecayThenFlatSchedule(self.args.epsilon_start, self.args.epsilon_finish,
                                                          self.args.epsilon_anneal_time, decay="linear")
-            else:
-                # Set to none; gaussian noise will be added in get_actions
-                self.exploration = None
+
 
     def get_actions(self, obs, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
         batch_size = obs.shape[0]
@@ -117,23 +115,20 @@ class MADDPGPolicy:
 
     def get_random_actions(self, obs, available_actions=None):
         batch_size = obs.shape[0]
-        if available_actions is not None:
-            logits = torch.ones(batch_size, self.act_dim)
-            random_actions = avail_choose(logits, available_actions)
-            random_actions = random_actions.sample()
-            random_actions = make_onehot(random_actions, self.act_dim)
-        else:
-            if self.discrete_action:
-                if self.multidiscrete:
-                    random_actions = [OneHotCategorical(logits=torch.ones(batch_size, self.act_dim[i])).sample().numpy() for i in
-                                      range(len(self.act_dim))]
-                    random_actions = np.concatenate(random_actions, axis=-1)
-                else:
-                    random_actions = OneHotCategorical(logits=torch.ones(
-                        batch_size, self.act_dim)).sample().numpy()
+
+        if self.discrete:
+            if self.multidiscrete:
+                random_actions = [OneHotCategorical(logits=torch.ones(batch_size, self.act_dim[i])).sample().numpy() for i in
+                                    range(len(self.act_dim))]
+                random_actions = np.concatenate(random_actions, axis=-1)
             else:
-                random_actions = np.random.uniform(
-                    self.act_space.low, self.act_space.high, size=(batch_size, self.act_dim))
+                if available_actions is not None:
+                    logits = avail_choose(torch.ones(batch_size, self.act_dim), available_actions)
+                    random_actions = OneHotCategorical(logits=logits).sample().numpy()
+                else:
+                    random_actions = OneHotCategorical(logits=torch.ones(batch_size, self.act_dim)).sample().numpy()
+        else:
+            random_actions = np.random.uniform(self.act_space.low, self.act_space.high, size=(batch_size, self.act_dim))
 
         return random_actions
 

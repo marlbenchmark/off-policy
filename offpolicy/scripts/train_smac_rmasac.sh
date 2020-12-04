@@ -1,7 +1,7 @@
 #!/bin/sh
 env="StarCraft2"
 map="3m"
-algo="rmasac"
+algo="rmasac-dis"
 exp="non-dict"
 seed_max=1
 

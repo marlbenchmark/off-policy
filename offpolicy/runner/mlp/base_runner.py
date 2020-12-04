@@ -16,7 +16,7 @@ class MlpRunner(object):
         # non-tunable hyperparameters are in args
         self.args = config["args"]
         self.device = config["device"]
-        self.q_learning = ["mqix","mvdn"]
+        self.q_learning = ["mqmix","mvdn"]
 
         # set tunable hyperparameters
         self.share_policy = self.args.share_policy

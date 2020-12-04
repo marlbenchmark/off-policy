@@ -8,10 +8,7 @@ from functools import reduce
 
 class HNSEnv(object):
 
-    def __init__(
-            self,
-            args
-    ):
+    def __init__(self, args):
         self.obs_instead_of_state = args.use_obs_instead_of_state
         if args.env_name == "BoxLocking":
             self.num_agents = args.num_agents
@@ -33,8 +30,8 @@ class HNSEnv(object):
             self.num_agents = self.num_seekers + self.num_hiders
             self.order_obs = ['agent_qpos_qvel', 'box_obs',
                               'ramp_obs', 'food_obs', 'observation_self']
-            self.mask_order_obs = [
-                'mask_aa_obs', 'mask_ab_obs', 'mask_ar_obs', 'mask_af_obs', None]
+            self.mask_order_obs = ['mask_aa_obs', 'mask_ab_obs', 
+                                    'mask_ar_obs', 'mask_af_obs', None]
         else:
             raise NotImplementedError
 
@@ -83,30 +80,25 @@ class HNSEnv(object):
         for i, key in enumerate(self.order_obs):
             if key in self.env.observation_space.spaces.keys():
                 if self.mask_order_obs[i] == None:
-                    temp_share_obs = dict_obs[key].reshape(
-                        self.num_agents, -1).copy()
+                    temp_share_obs = dict_obs[key].reshape(self.num_agents, -1).copy()
                     temp_obs = temp_share_obs.copy()
                 else:
-                    temp_share_obs = dict_obs[key].reshape(
-                        self.num_agents, -1).copy()
+                    temp_share_obs = dict_obs[key].reshape(self.num_agents, -1).copy()
                     temp_mask = dict_obs[self.mask_order_obs[i]].copy()
                     temp_obs = dict_obs[key].copy()
                     temp_mask = temp_mask.astype(bool)
                     mins_temp_mask = ~temp_mask
-                    temp_obs[mins_temp_mask] = np.zeros(
-                        (mins_temp_mask.sum(), temp_obs.shape[2]))
+                    temp_obs[mins_temp_mask] = np.zeros((mins_temp_mask.sum(), temp_obs.shape[2]), dtype=np.float32)
                     temp_obs = temp_obs.reshape(self.num_agents, -1)
                 if i == 0:
                     obs = temp_obs.copy()
                     share_obs = temp_share_obs.copy()
                 else:
                     obs = np.concatenate((obs, temp_obs), axis=1)
-                    share_obs = np.concatenate(
-                        (share_obs, temp_share_obs), axis=1)
+                    share_obs = np.concatenate((share_obs, temp_share_obs), axis=1)
         if self.obs_instead_of_state:
-        concat_obs = np.concatenate(obs, axis=0)
-        share_obs = np.expand_dims(concat_obs, 0).repeat(
-            self.num_agents, axis=0)
+            concat_obs = np.concatenate(obs, axis=0)
+            share_obs = np.expand_dims(concat_obs, 0).repeat(self.num_agents, axis=0)
 
         return obs, share_obs, None
 
@@ -149,30 +141,25 @@ class HNSEnv(object):
                 for i, key in enumerate(self.order_obs):
                     if key in self.env.observation_space.spaces.keys():
                         if self.mask_order_obs[i] == None:
-                            temp_share_obs = dict_obs[key].reshape(
-                                self.num_agents, -1).copy()
+                            temp_share_obs = dict_obs[key].reshape(self.num_agents, -1).copy()
                             temp_obs = temp_share_obs.copy()
                         else:
-                            temp_share_obs = dict_obs[key].reshape(
-                                self.num_agents, -1).copy()
+                            temp_share_obs = dict_obs[key].reshape(self.num_agents, -1).copy()
                             temp_mask = dict_obs[self.mask_order_obs[i]].copy()
                             temp_obs = dict_obs[key].copy()
                             temp_mask = temp_mask.astype(bool)
                             mins_temp_mask = ~temp_mask
-                            temp_obs[mins_temp_mask] = np.zeros(
-                                (mins_temp_mask.sum(), temp_obs.shape[2]))
+                            temp_obs[mins_temp_mask] = np.zeros((mins_temp_mask.sum(), temp_obs.shape[2]), dtype=np.float32)
                             temp_obs = temp_obs.reshape(self.num_agents, -1)
                         if i == 0:
                             obs = temp_obs.copy()
                             share_obs = temp_share_obs.copy()
                         else:
                             obs = np.concatenate((obs, temp_obs), axis=1)
-                            share_obs = np.concatenate(
-                                (share_obs, temp_share_obs), axis=1)
+                            share_obs = np.concatenate((share_obs, temp_share_obs), axis=1)
                 if self.obs_instead_of_state:
                     concat_obs = np.concatenate(obs, axis=0)
-                    share_obs = np.expand_dims(concat_obs, 0).repeat(
-                        self.num_agents, axis=0)
+                    share_obs = np.expand_dims(concat_obs, 0).repeat(self.num_agents, axis=0)
         return obs, share_obs, rewards, dones, infos, None
 
     def render(self):

@@ -1,6 +1,6 @@
 import logging
 from mujoco_worldgen.transforms import set_geom_attr_transform
-from envs.hns.modules import EnvModule
+from offpolicy.envs.hns.modules import EnvModule
 
 
 class FloorAttributes(EnvModule):

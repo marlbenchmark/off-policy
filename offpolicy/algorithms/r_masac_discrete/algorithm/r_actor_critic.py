@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from offpolicy.utils.util import init, check
 from offpolicy.algorithms.utils.rnn import RNNBase
+from offpolicy.algorithms.utils.act import ACTLayer
 
 class R_Critic(nn.Module):
     def __init__(self, args, central_obs_dim, central_act_dim, device):
@@ -59,9 +60,10 @@ class R_Critic(nn.Module):
 
         return q1_values, q2_values, h_final
 
+
 class R_Actor(nn.Module):
     def __init__(self, args, obs_dim, act_dim, device, take_prev_action=False):
-        super(R_Actor, self).__init__()
+        super(R_DiscreteActor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size
@@ -75,13 +77,9 @@ class R_Actor(nn.Module):
         self.rnn = RNNBase(args, input_dim)
 
         # get action from rnn hidden state
-        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
+        self.act = ACTLayer(act_dim, self.hidden_size, self._use_orthogonal, self._gain)
 
-        def init_(m):
-            return init(m, init_method, lambda x: nn.init.constant_(x, 0), self._gain)
-
-        self.mean_layer = init_(nn.Linear(self.hidden_size, act_dim))
-        self.log_std_layer = init_(nn.Linear(self.hidden_size, act_dim))
+        self.to(device)
 
     def forward(self, obs, prev_acts, rnn_states):
         # make sure input is a torch tensor
@@ -105,13 +103,7 @@ class R_Actor(nn.Module):
         inp = torch.cat((obs, prev_acts), dim=-1) if self.take_prev_act else obs
 
         rnn_outs, h_final = self.rnn(inp, rnn_states)
-        # pass outputs through linear layer 
-        mean_outs = self.mean_layer(rnn_outs)
-        log_std_outs = self.log_std_layer(rnn_outs)
+        # pass outputs through linear layer
+        act_outs = self.act(rnn_outs, no_sequence)
 
-        if no_sequence:
-            # remove the dummy first time dimension if the input didn't have a time dimension
-            mean_outs = mean_outs[0, :, :]
-            log_std_outs = log_std_outs[0, :, :]
-
-        return mean_outs, log_std_outs, h_final
+        return act_outs, h_final

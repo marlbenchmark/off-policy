@@ -50,7 +50,7 @@ class HNSRunner(RecRunner):
 
             obs, share_obs, _ = env.reset()
 
-            rnn_states_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.hidden_size)dtype=np.float32)
+            rnn_states_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.hidden_size), dtype=np.float32)
             if is_multidiscrete(self.policy_info[p_id]['act_space']):
                 self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
             else:
@@ -99,24 +99,17 @@ class HNSRunner(RecRunner):
 
                 else:
                     # get actions with exploration noise (eps-greedy/Gaussian)
-                    if self.algorithm_name == "rmasac":
-                        acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                            last_acts_batch,
-                                                                            rnn_states_batch,
-                                                                            sample=explore)
-                    else:
-                        acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                            last_acts_batch,
-                                                                            rnn_states_batch,
-                                                                            t_env=self.total_env_steps,
-                                                                            explore=explore,
-                                                                            use_target=False,
-                                                                            use_gumbel=False)
+                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                        last_acts_batch,
+                                                                        rnn_states_batch,
+                                                                        t_env=self.total_env_steps,
+                                                                        explore=explore)
                 # update rnn hidden state
-                rnn_states_batch = rnn_states_batch.detach().numpy()
-                if not isinstance(acts_batch, np.ndarray):
-                    acts_batch = acts_batch.detach().numpy()
+                rnn_states_batch = rnn_states_batch.detach()
                 last_acts_batch = acts_batch
+                if not isinstance(acts_batch, np.ndarray):
+                    acts_batch = acts_batch.cpu().detach().numpy()
+                
                 env_acts = np.split(acts_batch, self.num_envs)
 
                 # env step and store the relevant episode information
@@ -183,7 +176,7 @@ class HNSRunner(RecRunner):
 
     def log(self):
         end = time.time()
-        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS{}.\n"
+        print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS {}.\n"
               .format(self.env_name,
                       self.algorithm_name,
                       self.args.experiment_name,
@@ -198,7 +191,7 @@ class HNSRunner(RecRunner):
 
     def log_env(self, env_info, suffix=None):
         if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
-            for k, v in env_info:
+            for k, v in env_info.items():
                 if len(v) > 0:
                     v = np.mean(v)
                     suffix_k = k if suffix is None else suffix + k 

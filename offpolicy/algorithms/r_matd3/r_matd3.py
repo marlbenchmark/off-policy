@@ -2,7 +2,7 @@ import copy
 import torch
 import numpy as np
 import itertools
-from offpolicy.utils.util import huber_loss, mse_loss
+from offpolicy.utils.util import check, huber_loss, mse_loss
 from offpolicy.utils.popart import PopArt
 
 class R_MATD3:
@@ -15,6 +15,7 @@ class R_MATD3:
         self.per_eps = self.args.per_eps
         self.use_huber_loss = self.args.use_huber_loss
         self.huber_delta = self.args.huber_delta
+        self.tpdv = dict(dtype=torch.float32, device=device)
 
         if episode_length is None:
             self.episode_length = self.args.episode_length
@@ -29,8 +30,7 @@ class R_MATD3:
             [agent_id for agent_id in range(self.num_agents) if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
         if self.use_popart:
-            self.value_normalizer = {policy_id: PopArt(
-                1) for policy_id in self.policies.keys()}
+            self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
 
     # @profile
     def get_update_info(self, update_policy_id, obs_batch, act_batch, nobs_batch, avail_act_batch, navail_act_batch):
@@ -66,27 +66,22 @@ class R_MATD3:
                     sum_act_dim = int(sum(policy.act_dim))
                 else:
                     sum_act_dim = policy.act_dim
-                _, new_target_rnns, _ = policy.get_actions(first_obs, np.zeros((total_batch_size, sum_act_dim)),
-                                                           policy.init_hidden(
-                                                               -1, total_batch_size),
+                _, new_target_rnns, _ = policy.get_actions(first_obs, np.zeros((total_batch_size, sum_act_dim), dtype=np.float32),
+                                                           policy.init_hidden(-1, total_batch_size),
                                                            available_actions=first_avail_act, use_target=True)
                 # stack the nobs and acts of all the agents along batch dimension (data from buffer)
-                combined_nobs_seq_batch = np.concatenate(
-                    nobs_batch[p_id], axis=1)
-                combined_act_seq_batch = np.concatenate(
-                    act_batch[p_id], axis=1)
+                combined_nobs_seq_batch = np.concatenate(nobs_batch[p_id], axis=1)
+                combined_act_seq_batch = np.concatenate(act_batch[p_id], axis=1)
                 if navail_act_batch[p_id] is not None:
-                    combined_navail_act_batch = np.concatenate(
-                        navail_act_batch[p_id], axis=1)
+                    combined_navail_act_batch = np.concatenate(navail_act_batch[p_id], axis=1)
                 else:
                     combined_navail_act_batch = None
                 # pass the entire buffer sequence of all agents to the target actor to get targ actions at each step
                 pol_nact_seq, _, _ = policy.get_actions(combined_nobs_seq_batch, combined_act_seq_batch,
-                                                        new_target_rnns.float(),
+                                                        new_target_rnns,
                                                         available_actions=combined_navail_act_batch, use_target=True)
                 # separate the actions into individual agent actions
-                ind_agent_nact_seqs = pol_nact_seq.split(
-                    split_size=batch_size, dim=1)
+                ind_agent_nact_seqs = pol_nact_seq.cpu().split(split_size=batch_size, dim=1)
             # cat to form centralized next step action
             nact_sequences.append(torch.cat(ind_agent_nact_seqs, dim=-1))
             # increase ind by number agents just processed
@@ -103,11 +98,11 @@ class R_MATD3:
     def shared_train_policy_on_batch(self, update_policy_id, batch, update_actor):
         # unpack the batch
         obs_batch, cent_obs_batch, \
-            act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
-            dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
+        act_batch, rew_batch, \
+        nobs_batch, cent_nobs_batch, \
+        dones_batch, dones_env_batch, \
+        avail_act_batch, navail_act_batch, \
+        importance_weights, idxes = batch
 
         train_info = {}
 
@@ -115,14 +110,12 @@ class R_MATD3:
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
 
-        rew_sequence = torch.FloatTensor(rew_batch[update_policy_id][0])
-        env_done_sequence = torch.FloatTensor(
-            dones_env_batch[update_policy_id])
+        rew_sequence = check(rew_batch[update_policy_id][0]).to(**self.tpdv)
+        # ! use numpy
+        env_done_sequence = check(dones_env_batch[update_policy_id]).to(**self.tpdv)
         # mask the Q and target Q sequences with shifted dones (assume the first obs in episode is valid)
-        first_step_dones = torch.zeros(
-            (1, env_done_sequence.shape[1], env_done_sequence.shape[2]))
-        next_steps_dones = env_done_sequence[:
-                                             self.episode_length - 1, :, :].float()
+        first_step_dones = torch.zeros((1, env_done_sequence.shape[1], env_done_sequence.shape[2])).to(**self.tpdv)
+        next_steps_dones = env_done_sequence[: self.episode_length - 1, :, :]
         curr_env_dones = torch.cat((first_step_dones, next_steps_dones), dim=0)
 
         cent_obs_sequence = cent_obs_batch[update_policy_id]
@@ -135,8 +128,7 @@ class R_MATD3:
         # get sequence of Q value predictions
         predicted_Q1_sequence, predicted_Q2_sequence, _ = update_policy.critic(cent_obs_sequence,
                                                                                cent_act_sequence_buffer,
-                                                                               update_policy.init_hidden(-1,
-                                                                                                         batch_size))
+                                                                               update_policy.init_hidden(-1,batch_size))
 
         # iterate over time to get target Qs since the history at each step should be formed from the buffer sequence
         next_Q1_sequence, next_Q2_sequence = [], []
@@ -159,14 +151,12 @@ class R_MATD3:
         next_Q_sequence = torch.min(next_Q1_sequence, next_Q2_sequence)
 
         # mask the next step Qs and form targets
-        next_Q_sequence = (1 - env_done_sequence.float()) * next_Q_sequence
+        next_Q_sequence = (1 - env_done_sequence) * next_Q_sequence
         if self.use_popart:
             target_Q_sequence = rew_sequence + self.args.gamma * \
-                self.value_normalizer[update_policy_id].denormalize(
-                    next_Q_sequence)
+                self.value_normalizer[update_policy_id].denormalize(next_Q_sequence)
             nodones_target_Q_sequence = target_Q_sequence[curr_env_dones == 0]
-            target_Q_sequence[curr_env_dones == 0] = self.value_normalizer[update_policy_id](
-                nodones_target_Q_sequence)
+            target_Q_sequence[curr_env_dones == 0] = self.value_normalizer[update_policy_id](nodones_target_Q_sequence)
         else:
             target_Q_sequence = rew_sequence + self.args.gamma * next_Q_sequence
 
@@ -175,54 +165,40 @@ class R_MATD3:
         target_Q_sequence = (1 - curr_env_dones) * target_Q_sequence
         # make sure to detach the targets! Loss is MSE loss, but divide by the number of unmasked elements
         # Mean bellman error for each timestep
-        error_1 = predicted_Q1_sequence - target_Q_sequence.float().detach()
-        error_2 = predicted_Q2_sequence - target_Q_sequence.float().detach()
+        error_1 = predicted_Q1_sequence - target_Q_sequence.detach()
+        error_2 = predicted_Q2_sequence - target_Q_sequence.detach()
         if self.use_per:
+            importance_weights = check(importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
-                per_batch_critic_loss_1 = huber_loss(
-                    error_1, self.huber_delta).sum(dim=0).flatten()
-                per_batch_critic_loss_2 = huber_loss(
-                    error_2, self.huber_delta).sum(dim=0).flatten()
+                per_batch_critic_loss_1 = huber_loss(error_1, self.huber_delta).sum(dim=0).flatten()
+                per_batch_critic_loss_2 = huber_loss(error_2, self.huber_delta).sum(dim=0).flatten()
             else:
-                per_batch_critic_loss_1 = mse_loss(
-                    error_1).sum(dim=0).flatten()
-                per_batch_critic_loss_2 = mse_loss(
-                    error_2).sum(dim=0).flatten()
+                per_batch_critic_loss_1 = mse_loss(error_1).sum(dim=0).flatten()
+                per_batch_critic_loss_2 = mse_loss(error_2).sum(dim=0).flatten()
 
-            importance_weight_critic_loss_1 = per_batch_critic_loss_1 * \
-                torch.FloatTensor(importance_weights)
+            importance_weight_critic_loss_1 = per_batch_critic_loss_1 * importance_weights
             critic_loss_1 = importance_weight_critic_loss_1.sum() / (1 - curr_env_dones).sum()
 
-            importance_weight_critic_loss_2 = per_batch_critic_loss_2 * \
-                torch.FloatTensor(importance_weights)
+            importance_weight_critic_loss_2 = per_batch_critic_loss_2 * importance_weights
             critic_loss_2 = importance_weight_critic_loss_2.sum() / (1 - curr_env_dones).sum()
 
             critic_loss = critic_loss_1 + critic_loss_2
 
             # new priorities are a combination of the maximum TD error across sequence and the mean TD error across sequence
-            td_errors_1 = (predicted_Q1_sequence -
-                           target_Q_sequence).abs().detach().numpy()
-            td_errors_2 = (predicted_Q1_sequence -
-                           target_Q_sequence).abs().detach().numpy()
+            td_errors_1 = error_1.abs().cpu().detach().numpy()
+            td_errors_2 = error_2.abs().cpu().detach().numpy()
 
-            new_priorities_1 = ((1 - self.args.per_nu) * td_errors_1.mean(
-                axis=0) + self.args.per_nu * td_errors_1.max(axis=0)).flatten()
-            new_priorities_2 = ((1 - self.args.per_nu) * td_errors_2.mean(
-                axis=0) + self.args.per_nu * td_errors_2.max(axis=0)).flatten()
+            new_priorities_1 = ((1 - self.args.per_nu) * td_errors_1.mean(axis=0) + self.args.per_nu * td_errors_1.max(axis=0)).flatten()
+            new_priorities_2 = ((1 - self.args.per_nu) * td_errors_2.mean(axis=0) + self.args.per_nu * td_errors_2.max(axis=0)).flatten()
             # average the priorities to get final priorities
-            new_priorities = (new_priorities_1 +
-                              new_priorities_2) / 2 + self.per_eps
+            new_priorities = (new_priorities_1 + new_priorities_2) / 2 + self.per_eps
         else:
             if self.use_huber_loss:
-                critic_loss_1 = huber_loss(
-                    error_1, self.huber_delta).sum() / (1 - curr_env_dones).sum()
-                critic_loss_2 = huber_loss(
-                    error_2, self.huber_delta).sum() / (1 - curr_env_dones).sum()
+                critic_loss_1 = huber_loss(error_1, self.huber_delta).sum() / (1 - curr_env_dones).sum()
+                critic_loss_2 = huber_loss(error_2, self.huber_delta).sum() / (1 - curr_env_dones).sum()
             else:
-                critic_loss_1 = mse_loss(
-                    error_1).sum() / (1 - curr_env_dones).sum()
-                critic_loss_2 = mse_loss(
-                    error_2).sum() / (1 - curr_env_dones).sum()
+                critic_loss_1 = mse_loss(error_1).sum() / (1 - curr_env_dones).sum()
+                critic_loss_2 = mse_loss(error_2).sum() / (1 - curr_env_dones).sum()
 
             critic_loss = critic_loss_1 + critic_loss_2
 
@@ -254,7 +230,7 @@ class R_MATD3:
                 else:
                     sum_act_dim = self.policies[p_id].act_dim
                 for a_id in self.policy_agents[p_id]:
-                    mask_temp.append(np.zeros(sum_act_dim))
+                    mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
             masks = []
             done_mask = []
@@ -268,79 +244,64 @@ class R_MATD3:
                     sum_act_dim = int(sum(update_policy.act_dim))
                 else:
                     sum_act_dim = update_policy.act_dim
-                curr_mask_temp[act_sequence_replace_ind_start +
-                               i] = np.ones(sum_act_dim)
+                curr_mask_temp[act_sequence_replace_ind_start +i] = np.ones(sum_act_dim, dtype=np.float32)
                 curr_mask_vec = np.concatenate(curr_mask_temp)
                 # expand this mask into the proper size
                 curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
                 masks.append(curr_mask)
 
                 # now collect agent dones
-                agent_done_sequence = torch.FloatTensor(
-                    dones_batch[update_policy_id][i])
-                agent_first_step_dones = torch.zeros(
-                    (1, agent_done_sequence.shape[1], agent_done_sequence.shape[2]))
+                agent_done_sequence = check(dones_batch[update_policy_id][i])
+                agent_first_step_dones = torch.zeros((1, agent_done_sequence.shape[1], agent_done_sequence.shape[2]))
                 agent_next_steps_dones = agent_done_sequence[: self.episode_length - 1, :, :]
-                curr_agent_dones = torch.cat(
-                    (agent_first_step_dones, agent_next_steps_dones), dim=0)
+                curr_agent_dones = torch.cat((agent_first_step_dones, agent_next_steps_dones), dim=0)
                 done_mask.append(curr_agent_dones)
 
             # cat masks and form into torch tensors
-            mask = torch.FloatTensor(np.concatenate(masks))
-            done_mask = torch.cat(done_mask, dim=1).float()
+            mask = check(np.concatenate(masks)).to(**self.tpdv)
+            done_mask = torch.cat(done_mask, dim=1).to(**self.tpdv)
 
             total_batch_size = batch_size * num_update_agents
             # stack obs, acts, and available acts of all agents along batch dimension to process at once
-            pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim)),
-                                                      np.concatenate(act_batch[update_policy_id][:, : -1],
-                                                                     axis=1))).astype(np.float32)
-            pol_agents_obs_seq = np.concatenate(
-                obs_batch[update_policy_id], axis=1).astype(np.float32)
+            pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim), dtype=np.float32),
+                                                      np.concatenate(act_batch[update_policy_id][:, : -1],axis=1)))
+            pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)
             if avail_act_batch[update_policy_id] is not None:
-                pol_agents_avail_act_seq = np.concatenate(
-                    avail_act_batch[update_policy_id], axis=1).astype(np.float32)
+                pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
             else:
                 pol_agents_avail_act_seq = None
             # get all the actions from actor, with gumbel softmax to differentiate through the samples
-            policy_act_seq, _, _ = update_policy.get_actions(pol_agents_obs_seq, pol_prev_buffer_act_seq,
-                                                             update_policy.init_hidden(
-                                                                 -1, total_batch_size),
+            policy_act_seq, _, _ = update_policy.get_actions(pol_agents_obs_seq, 
+                                                             pol_prev_buffer_act_seq,
+                                                             update_policy.init_hidden(-1, total_batch_size),
                                                              available_actions=pol_agents_avail_act_seq,
                                                              use_gumbel=True)
             # separate the output into individual agent act sequences
-            agent_actor_seqs = policy_act_seq.split(
-                split_size=batch_size, dim=1)
+            agent_actor_seqs = policy_act_seq.split(split_size=batch_size, dim=1)
             # cat these along final dim to formulate centralized action and stack copies of the batch so all agents can be updated
             # convert act sequences to torch, formulate centralized buffer action, and repeat as done above
-            act_sequences = list(
-                map(lambda arr: torch.FloatTensor(arr), act_sequences))
+            act_sequences = list(map(lambda arr: check(arr).to(**self.tpdv), act_sequences))
 
             actor_cent_acts = copy.deepcopy(act_sequences)
             for i in range(num_update_agents):
                 actor_cent_acts[act_sequence_replace_ind_start +
                                 i] = agent_actor_seqs[i]
             # cat these along final dim to formulate centralized action and stack copies of the batch so all agents can be updated
-            actor_cent_acts = torch.cat(
-                actor_cent_acts, dim=-1).repeat((1, num_update_agents, 1)).float()
+            actor_cent_acts = torch.cat(actor_cent_acts, dim=-1).repeat((1, num_update_agents, 1))
 
-            batch_cent_acts = torch.cat(
-                act_sequences, dim=-1).repeat((1, num_update_agents, 1)).float()
+            batch_cent_acts = torch.cat(act_sequences, dim=-1).repeat((1, num_update_agents, 1))
 
             # also repeat the cent obs
-            stacked_cent_obs_seq = np.tile(
-                cent_obs_sequence, (1, num_update_agents, 1)).astype(np.float32)
+            stacked_cent_obs_seq = np.tile(cent_obs_sequence, (1, num_update_agents, 1))
             critic_rnn_state = update_policy.init_hidden(-1, total_batch_size)
 
             for t in range(self.episode_length):
                 # get Q values at timestep t with the replaced actions
-                replaced_cent_act_batch = mask * \
-                    actor_cent_acts[t] + (1 - mask) * batch_cent_acts[t]
+                replaced_cent_act_batch = mask * actor_cent_acts[t] + (1 - mask) * batch_cent_acts[t]
                 # get Q values at timestep but don't store the new RNN state
-                Q_t, _ = update_policy.critic.Q1(
-                    stacked_cent_obs_seq[t], replaced_cent_act_batch, critic_rnn_state)
+                Q_t, _ = update_policy.critic.Q1(stacked_cent_obs_seq[t], replaced_cent_act_batch, critic_rnn_state)
                 # update the RNN state by stepping the RNN through with buffer sequence
-                _, critic_rnn_state = update_policy.critic.Q1(stacked_cent_obs_seq[t], batch_cent_acts[t],
-                                                              critic_rnn_state)
+                _, critic_rnn_state = update_policy.critic.Q1(stacked_cent_obs_seq[t], batch_cent_acts[t], critic_rnn_state)
                 agent_Q_sequences.append(Q_t)
             # stack over time
             agent_Q_sequences = torch.stack(agent_Q_sequences)
@@ -367,11 +328,11 @@ class R_MATD3:
     def cent_train_policy_on_batch(self, update_policy_id, batch, update_actor):
         # unpack the batch
         obs_batch, cent_obs_batch, \
-            act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
-            dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
+        act_batch, rew_batch, \
+        nobs_batch, cent_nobs_batch, \
+        dones_batch, dones_env_batch, \
+        avail_act_batch, navail_act_batch, \
+        importance_weights, idxes = batch
 
         train_info = {}
 
@@ -379,9 +340,8 @@ class R_MATD3:
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
 
-        rew_sequence = torch.FloatTensor(rew_batch[update_policy_id][0])
-        env_done_sequence = torch.FloatTensor(
-            dones_env_batch[update_policy_id])
+        rew_sequence = check(rew_batch[update_policy_id][0]).to(**self.tpdv)
+        env_done_sequence = check(dones_env_batch[update_policy_id]).to(**self.tpdv)
         cent_obs_sequence = cent_obs_batch[update_policy_id]
         cent_nobs_sequence = cent_nobs_batch[update_policy_id]
         dones_sequence = dones_batch[update_policy_id]
@@ -397,14 +357,12 @@ class R_MATD3:
         all_agent_cent_nobs = np.concatenate(cent_nobs_sequence, axis=1)
         all_agent_dones = np.concatenate(dones_sequence, axis=1)
         # since this is same for each agent, just repeat when stacking
-        all_agent_cent_act_buffer = np.tile(
-            cent_act_sequence_buffer, (1, num_update_agents, 1))
-        all_agent_cent_nact = np.tile(
-            cent_nact_sequence, (1, num_update_agents, 1))
+        all_agent_cent_act_buffer = np.tile(cent_act_sequence_buffer, (1, num_update_agents, 1))
+        all_agent_cent_nact = np.tile(cent_nact_sequence, (1, num_update_agents, 1))
+        
         all_env_dones = env_done_sequence.repeat(1, num_update_agents, 1)
         all_agent_rewards = rew_sequence.repeat(1, num_update_agents, 1)
-        first_step_dones = torch.zeros(
-            (1, all_env_dones.shape[1], all_env_dones.shape[2]))
+        first_step_dones = torch.zeros((1, all_env_dones.shape[1], all_env_dones.shape[2])).to(**self.tpdv)
         next_steps_dones = all_env_dones[:-1, :, :]
         curr_env_dones = torch.cat((first_step_dones, next_steps_dones), dim=0)
 
@@ -414,8 +372,7 @@ class R_MATD3:
         next_Q1_sequence, next_Q2_sequence = [], []
         # don't track gradients for target computation
         with torch.no_grad():
-            target_critic_rnn_state = update_policy.init_hidden(
-                -1, total_batch_size)
+            target_critic_rnn_state = update_policy.init_hidden(-1, total_batch_size)
             for t in range(self.episode_length):
                 # update the RNN states based on the buffer sequence
                 _, _, target_critic_rnn_state = update_policy.target_critic(all_agent_cent_obs[t],
@@ -435,11 +392,9 @@ class R_MATD3:
         next_Q_sequence = (1 - all_env_dones) * next_Q_sequence
         if self.use_popart:
             target_Q_sequence = all_agent_rewards + self.args.gamma * \
-                self.value_normalizer[update_policy_id].denormalize(
-                    next_Q_sequence)
+                self.value_normalizer[update_policy_id].denormalize(next_Q_sequence)
             nodones_target_Q_sequence = target_Q_sequence[curr_env_dones == 0]
-            target_Q_sequence[curr_env_dones == 0] = self.value_normalizer[update_policy_id](
-                nodones_target_Q_sequence)
+            target_Q_sequence[curr_env_dones == 0] = self.value_normalizer[update_policy_id](nodones_target_Q_sequence)
         else:
             target_Q_sequence = all_agent_rewards + self.args.gamma * next_Q_sequence
 
@@ -448,70 +403,53 @@ class R_MATD3:
         target_Q_sequence = target_Q_sequence * (1 - curr_env_dones)
 
         if self.use_value_active_masks:
-            curr_agent_dones = torch.FloatTensor(all_agent_dones)
-            predicted_Q1_sequence = predicted_Q1_sequence * \
-                (1 - curr_agent_dones)
-            predicted_Q2_sequence = predicted_Q2_sequence * \
-                (1 - curr_agent_dones)
+            curr_agent_dones = check(all_agent_dones).to(**self.tpdv)
+            predicted_Q1_sequence = predicted_Q1_sequence * (1 - curr_agent_dones)
+            predicted_Q2_sequence = predicted_Q2_sequence * (1 - curr_agent_dones)
             target_Q_sequence = target_Q_sequence * (1 - curr_agent_dones)
 
         # make sure to detach the targets! Loss is MSE loss, but divide by the number of unmasked elements
         # Mean bellman error for each timestep
-        error_1 = predicted_Q1_sequence - target_Q_sequence.float().detach()
-        error_2 = predicted_Q2_sequence - target_Q_sequence.float().detach()
+        error_1 = predicted_Q1_sequence - target_Q_sequence.detach()
+        error_2 = predicted_Q2_sequence - target_Q_sequence.detach()
         if self.use_per:
-            agent_importance_weights = np.tile(
-                importance_weights, num_update_agents)
+            agent_importance_weights = np.tile(importance_weights, num_update_agents)
+            agent_importance_weights = check(agent_importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
-                per_batch_critic_loss_1 = huber_loss(
-                    error_1, self.huber_delta).sum(dim=0).flatten()
-                per_batch_critic_loss_2 = huber_loss(
-                    error_2, self.huber_delta).sum(dim=0).flatten()
+                per_batch_critic_loss_1 = huber_loss(error_1, self.huber_delta).sum(dim=0).flatten()
+                per_batch_critic_loss_2 = huber_loss(error_2, self.huber_delta).sum(dim=0).flatten()
             else:
-                per_batch_critic_loss_1 = mse_loss(
-                    error_1).sum(dim=0).flatten()
-                per_batch_critic_loss_2 = mse_loss(
-                    error_2).sum(dim=0).flatten()
+                per_batch_critic_loss_1 = mse_loss(error_1).sum(dim=0).flatten()
+                per_batch_critic_loss_2 = mse_loss(error_2).sum(dim=0).flatten()
 
-            agent_importance_weight_critic_loss_1 = per_batch_critic_loss_1 * \
-                torch.FloatTensor(agent_importance_weights)
+            agent_importance_weight_critic_loss_1 = per_batch_critic_loss_1 * agent_importance_weights
             if self.use_value_active_masks:
-                critic_loss_1 = agent_importance_weight_critic_loss_1.sum(
-                ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                critic_loss_1 = agent_importance_weight_critic_loss_1.sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
             else:
-                critic_loss_1 = agent_importance_weight_critic_loss_1.sum() / \
-                    (1 - curr_env_dones).sum()
+                critic_loss_1 = agent_importance_weight_critic_loss_1.sum() / (1 - curr_env_dones).sum()
 
-            agent_importance_weight_critic_loss_2 = per_batch_critic_loss_2 * \
-                torch.FloatTensor(agent_importance_weights)
+            agent_importance_weight_critic_loss_2 = per_batch_critic_loss_2 * agent_importance_weights
             if self.use_value_active_masks:
-                critic_loss_2 = agent_importance_weight_critic_loss_2.sum(
-                ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                critic_loss_2 = agent_importance_weight_critic_loss_2.sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
             else:
-                critic_loss_2 = agent_importance_weight_critic_loss_2.sum() / \
-                    (1 - curr_env_dones).sum()
+                critic_loss_2 = agent_importance_weight_critic_loss_2.sum() / (1 - curr_env_dones).sum()
 
             critic_loss = critic_loss_1 + critic_loss_2
 
-            td_errors_1 = error_1.abs().detach().numpy()
-            td_errors_2 = error_2.abs().detach().numpy()
+            td_errors_1 = error_1.abs().cpu().detach().numpy()
+            td_errors_2 = error_2.abs().cpu().detach().numpy()
 
-            new_priorities_1 = ((1 - self.args.per_nu) * td_errors_1.mean(
-                axis=0) + self.args.per_nu * td_errors_1.max(axis=0)).flatten()
-            new_priorities_2 = ((1 - self.args.per_nu) * td_errors_2.mean(
-                axis=0) + self.args.per_nu * td_errors_2.max(axis=0)).flatten()
+            new_priorities_1 = ((1 - self.args.per_nu) * td_errors_1.mean(axis=0) + self.args.per_nu * td_errors_1.max(axis=0)).flatten()
+            new_priorities_2 = ((1 - self.args.per_nu) * td_errors_2.mean(axis=0) + self.args.per_nu * td_errors_2.max(axis=0)).flatten()
 
             agent_new_priorities = (new_priorities_1 + new_priorities_2) / 2
 
-            new_priorities = np.mean(
-                np.split(agent_new_priorities, num_update_agents), axis=0) + self.per_eps
+            new_priorities = np.mean(np.split(agent_new_priorities, num_update_agents), axis=0) + self.per_eps
         else:
             if self.use_huber_loss:
                 if self.use_value_active_masks:
-                    critic_loss_1 = huber_loss(error_1, self.huber_delta).sum(
-                    ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
-                    critic_loss_2 = huber_loss(error_2, self.huber_delta).sum(
-                    ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                    critic_loss_1 = huber_loss(error_1, self.huber_delta).sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                    critic_loss_2 = huber_loss(error_2, self.huber_delta).sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
                 else:
                     critic_loss_1 = huber_loss(
                         error_1, self.huber_delta).sum() / (1 - curr_env_dones).sum()
@@ -519,15 +457,11 @@ class R_MATD3:
                         error_2, self.huber_delta).sum() / (1 - curr_env_dones).sum()
             else:
                 if self.use_value_active_masks:
-                    critic_loss_1 = mse_loss(error_1).sum(
-                    ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
-                    critic_loss_2 = mse_loss(error_2).sum(
-                    ) / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                    critic_loss_1 = mse_loss(error_1).sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
+                    critic_loss_2 = mse_loss(error_2).sum() / ((1 - curr_env_dones) * (1 - curr_agent_dones)).sum()
                 else:
-                    critic_loss_1 = mse_loss(
-                        error_1).sum() / (1 - curr_env_dones).sum()
-                    critic_loss_2 = mse_loss(
-                        error_2).sum() / (1 - curr_env_dones).sum()
+                    critic_loss_1 = mse_loss(error_1).sum() / (1 - curr_env_dones).sum()
+                    critic_loss_2 = mse_loss(error_2).sum() / (1 - curr_env_dones).sum()
 
             critic_loss = critic_loss_1 + critic_loss_2
 
@@ -558,7 +492,7 @@ class R_MATD3:
                 else:
                     sum_act_dim = self.policies[p_id].act_dim
                 for a_id in self.policy_agents[p_id]:
-                    mask_temp.append(np.zeros(sum_act_dim))
+                    mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
             masks = []
             done_mask = []
@@ -572,8 +506,7 @@ class R_MATD3:
                     sum_act_dim = int(sum(update_policy.act_dim))
                 else:
                     sum_act_dim = update_policy.act_dim
-                curr_mask_temp[act_sequence_replace_ind_start +
-                               i] = np.ones(sum_act_dim)
+                curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(sum_act_dim, dtype=np.float32)
                 curr_mask_vec = np.concatenate(curr_mask_temp)
                 # expand this mask into the proper size
                 curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
@@ -581,55 +514,43 @@ class R_MATD3:
 
                 # now collect agent dones
                 if self.use_value_active_masks:
-                    agent_done_sequence = torch.FloatTensor(
-                        dones_batch[update_policy_id][i])
+                    agent_done_sequence = check(dones_batch[update_policy_id][i])
                     done_mask.append(agent_done_sequence)
                 else:
-                    agent_done_sequence = torch.FloatTensor(
-                        dones_batch[update_policy_id][i])
-                    agent_first_step_dones = torch.zeros(
-                        (1, agent_done_sequence.shape[1], agent_done_sequence.shape[2]))
+                    agent_done_sequence = check(dones_batch[update_policy_id][i])
+                    agent_first_step_dones = torch.zeros((1, agent_done_sequence.shape[1], agent_done_sequence.shape[2]))
                     agent_next_steps_dones = agent_done_sequence[: self.episode_length - 1, :, :]
-                    curr_agent_dones = torch.cat(
-                        (agent_first_step_dones, agent_next_steps_dones), dim=0)
+                    curr_agent_dones = torch.cat((agent_first_step_dones, agent_next_steps_dones), dim=0)
                     done_mask.append(curr_agent_dones)
 
             # cat masks and form into torch tensors
-            mask = torch.FloatTensor(np.concatenate(masks))
-            done_mask = torch.cat(done_mask, dim=1)
+            mask = check(np.concatenate(masks)).to(**self.tpdv)
+            done_mask = torch.cat(done_mask, dim=1).to(**self.tpdv)
 
             # stack obs, acts, and available acts of all agents along batch dimension to process at once
-            pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim)),
+            pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim), dtype=np.float32),
                                                       np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
-            pol_agents_obs_seq = np.concatenate(
-                obs_batch[update_policy_id], axis=1)
+            pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)
             if avail_act_batch[update_policy_id] is not None:
-                pol_agents_avail_act_seq = np.concatenate(
-                    avail_act_batch[update_policy_id], axis=1)
+                pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
             else:
                 pol_agents_avail_act_seq = None
             # get all the actions from actor, with gumbel softmax to differentiate through the samples
             policy_act_seq, _, _ = update_policy.get_actions(pol_agents_obs_seq, pol_prev_buffer_act_seq,
-                                                             update_policy.init_hidden(
-                                                                 -1, total_batch_size),
+                                                             update_policy.init_hidden(-1, total_batch_size),
                                                              pol_agents_avail_act_seq, use_gumbel=True)
             # separate the output into individual agent act sequences
-            agent_actor_seqs = policy_act_seq.split(
-                split_size=batch_size, dim=1)
+            agent_actor_seqs = policy_act_seq.split(split_size=batch_size, dim=1)
             # convert act sequences to torch, formulate centralized buffer action, and repeat as done above
-            act_sequences = list(
-                map(lambda arr: torch.FloatTensor(arr), act_sequences))
+            act_sequences = list(map(lambda arr: check(arr).to(**self.tpdv), act_sequences))
 
             actor_cent_acts = copy.deepcopy(act_sequences)
             for i in range(num_update_agents):
-                actor_cent_acts[act_sequence_replace_ind_start +
-                                i] = agent_actor_seqs[i]
+                actor_cent_acts[act_sequence_replace_ind_start +i] = agent_actor_seqs[i]
             # cat these along final dim to formulate centralized action and stack copies of the batch so all agents can be updated
-            actor_cent_acts = torch.cat(
-                actor_cent_acts, dim=-1).repeat((1, num_update_agents, 1)).float()
+            actor_cent_acts = torch.cat(actor_cent_acts, dim=-1).repeat((1, num_update_agents, 1))
 
-            batch_cent_acts = torch.cat(
-                act_sequences, dim=-1).repeat((1, num_update_agents, 1)).float()
+            batch_cent_acts = torch.cat(act_sequences, dim=-1).repeat((1, num_update_agents, 1))
             # also repeat the cent obs
             critic_rnn_state = update_policy.init_hidden(-1, total_batch_size)
 
@@ -639,11 +560,9 @@ class R_MATD3:
                 replaced_cent_act_batch = mask * \
                     actor_cent_acts[t] + (1 - mask) * batch_cent_acts[t]
                 # get Q values at timestep but don't store the new RNN state
-                Q_t, _ = update_policy.critic.Q1(
-                    all_agent_cent_obs[t], replaced_cent_act_batch, critic_rnn_state)
+                Q_t, _ = update_policy.critic.Q1(all_agent_cent_obs[t], replaced_cent_act_batch, critic_rnn_state)
                 # update the RNN state by stepping the RNN through with buffer sequence
-                _, critic_rnn_state = update_policy.critic.Q1(
-                    all_agent_cent_obs[t], batch_cent_acts[t], critic_rnn_state)
+                _, critic_rnn_state = update_policy.critic.Q1(all_agent_cent_obs[t], batch_cent_acts[t], critic_rnn_state)
                 agent_Q_sequences.append(Q_t)
             # stack over time
             agent_Q_sequences = torch.stack(agent_Q_sequences)

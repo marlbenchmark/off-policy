@@ -104,20 +104,12 @@ class HanabiRunner(MlpRunner):
                     act = policy.get_random_actions(obs[choose, current_agent_id], 
                                                     avail_acts[choose, current_agent_id])
                 else:
-                    if self.algorithm_name == "masac":
-                        act, _ = policy.get_actions(obs[choose, current_agent_id],
-                                                    avail_acts[choose,current_agent_id],
-                                                    sample=explore)
-                    else:
-                        # get actions with exploration noise (eps-greedy/Gaussian)
-                        act, _ = policy.get_actions(obs[choose, current_agent_id],
+                    act, _ = policy.get_actions(obs[choose, current_agent_id],
                                                     avail_acts[choose,current_agent_id],
                                                     t_env=self.total_env_steps,
-                                                    explore=explore,
-                                                    use_target=False,
-                                                    use_gumbel=False)
+                                                    explore=explore)
                 if not isinstance(act, np.ndarray):
-                    act = act.detach().numpy()
+                    act = act.cpu().detach().numpy()
 
                 env_acts[choose, current_agent_id] = act
 

@@ -95,26 +95,17 @@ class SMACRunner(RecRunner):
 
             else:
                 # get actions with exploration noise (eps-greedy/Gaussian)
-                if self.algorithm_name == "rmasac":
-                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                        last_acts_batch,
-                                                                        rnn_states_batch,
-                                                                        avail_acts_batch,
-                                                                        sample=explore)
-                else:
-                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                        last_acts_batch,
-                                                                        rnn_states_batch,
-                                                                        avail_acts_batch,
-                                                                        t_env=self.total_env_steps,
-                                                                        explore=explore,
-                                                                        use_target=False,
-                                                                        use_gumbel=False)
-            # update rnn hidden state
-            rnn_states_batch = rnn_states_batch.detach().numpy()
-            if not isinstance(acts_batch, np.ndarray):
-                acts_batch = acts_batch.detach().numpy()
+                acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                    last_acts_batch,
+                                                                    rnn_states_batch,
+                                                                    avail_acts_batch,
+                                                                    t_env=self.total_env_steps,
+                                                                    explore=explore)
+            rnn_states_batch = rnn_states_batch.detach()
             last_acts_batch = acts_batch
+            if not isinstance(acts_batch, np.ndarray):
+                acts_batch = acts_batch.cpu().detach().numpy()
+            
             env_acts = np.split(acts_batch, self.num_envs)
 
             # env step and store the relevant episode information
@@ -125,8 +116,6 @@ class SMACRunner(RecRunner):
 
             dones_env = np.all(dones, axis=1)
             terminate_episodes = np.any(dones_env) or t == self.episode_length
-            # if terminate_episodes:
-            #    dones_env = np.ones_like(dones_env).astype(bool)
 
             episode_obs[p_id][episode_step] = obs
             episode_share_obs[p_id][episode_step] = share_obs

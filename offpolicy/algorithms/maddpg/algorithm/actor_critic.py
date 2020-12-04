@@ -1,117 +1,69 @@
-import copy
-import numpy as np
-
 import torch
 import torch.nn as nn
-
-from offpolicy.utils.util import init, get_clones
-from offpolicy.utils.mlp import MLPLayer
+import copy
+import numpy as np
+from offpolicy.utils.util import init, check
+from offpolicy.algorithms.utils.mlp import MLPBase
+from offpolicy.algorithms.utils.act import ACTLayer
 
 class Actor(nn.Module):
-    def __init__(self, args, obs_dim, act_dim, discrete_action, device):
+    def __init__(self, args, obs_dim, act_dim, device):
         super(Actor, self).__init__()
-        self._use_feature_normalization = args.use_feature_normalization
-        self._use_ReLU = args.use_ReLU
-        self._layer_N = args.layer_N
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
         self.hidden_size = args.hidden_size
-        self.discrete = discrete_action
         self.device = device
+        self.take_prev_act = take_prev_action
+        self.tpdv = dict(dtype=torch.float32, device=device)
 
-        input_dim = self.obs_dim
+        input_dim = (obs_dim + act_dim) if take_prev_action else obs_dim
 
-        if self._use_feature_normalization:
-            self.feature_norm = nn.LayerNorm(input_dim).to(self.device)
-        self.mlp = MLPLayer(input_dim, self.hidden_size, self._layer_N,
-                            self._use_orthogonal, self._use_ReLU).to(self.device)
+        # map observation input into input for rnn
+        self.mlp = MLPBase(args, input_dim)
 
-        if self._use_orthogonal:
-            def init_(m): return init(m, nn.init.orthogonal_,
-                                      lambda x: nn.init.constant_(x, 0), self._gain)
-        else:
-            def init_(m): return init(m, nn.init.xavier_uniform_,
-                                      lambda x: nn.init.constant_(x, 0), self._gain)
+        # get action from rnn hidden state
+        self.act = ACTLayer(act_dim, self.hidden_size, self._use_orthogonal, self._gain)
 
-        if isinstance(act_dim, np.ndarray):
-            # MultiDiscrete setting: have n Linear layers for each action
-            self.multidiscrete = True
-            self.action_outs = [init_(nn.Linear(self.hidden_size, a_dim)).to(
-                self.device) for a_dim in act_dim]
-        else:
-            self.multidiscrete = False
-            self.action_out = init_(
-                nn.Linear(self.hidden_size, act_dim)).to(self.device)
+        self.to(device)
 
     def forward(self, x):
         # make sure input is a torch tensor
-        if type(x) == np.ndarray:
-            x = torch.FloatTensor(x)
-
-        x = x.to(self.device)
-
-        if self._use_feature_normalization:
-            x = self.feature_norm(x)
+        x = check(x).to(**self.tpdv)     
 
         x = self.mlp(x)
+        # pass outputs through linear layer
+        action = self.act(x)
 
-        if self.multidiscrete:
-            actions = [a_out(x).cpu() for a_out in self.action_outs]
-        else:
-            actions = self.action_out(x).cpu()
-
-        return actions
+        return action
 
 
 class Critic(nn.Module):
     def __init__(self, args, central_obs_dim, central_act_dim, device):
         super(Critic, self).__init__()
-        self._use_feature_normalization = args.use_feature_normalization
-        self._use_ReLU = args.use_ReLU
-        self._layer_N = args.layer_N
         self._use_orthogonal = args.use_orthogonal
-        self.central_obs_dim = central_obs_dim
-        self.central_act_dim = central_act_dim
         self.hidden_size = args.hidden_size
         self.device = device
+        self.tpdv = dict(dtype=torch.float32, device=device)
 
         input_dim = central_obs_dim + central_act_dim
-        if self._use_feature_normalization:
-            self.feature_norm = nn.LayerNorm(input_dim).to(self.device)
 
-        # map observation input into input for rnn
-        self.mlp = MLPLayer(input_dim, self.hidden_size, self._layer_N,
-                            self._use_orthogonal, self._use_ReLU).to(self.device)
+        self.mlp = MLPBase(args, input_dim)
 
-        if self._use_orthogonal:
-            def init_(m): return init(m, nn.init.orthogonal_,
-                                      lambda x: nn.init.constant_(x, 0))
-        else:
-            def init_(m): return init(m, nn.init.xavier_uniform_,
-                                      lambda x: nn.init.constant_(x, 0))
-
-        self.q_out = init_(nn.Linear(self.hidden_size, 1)).to(self.device)
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
+        def init_(m):
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0))
+        self.q_out = init_(nn.Linear(self.hidden_size, 1))
+        
+        self.to(device)
 
     def forward(self, central_obs, central_act):
-        if type(central_obs) == np.ndarray:
-            central_obs = torch.FloatTensor(central_obs)
-        if type(central_act) == np.ndarray:
-            central_act = torch.FloatTensor(central_act)
-
-        central_obs = central_obs.to(self.device)
-        central_act = central_act.to(self.device)
+        # ensure inputs are torch tensors
+        central_obs = check(central_obs).to(**self.tpdv)
+        central_act = check(central_act).to(**self.tpdv)
 
         x = torch.cat([central_obs, central_act], dim=1)
 
-        if self._use_feature_normalization:
-            x = self.feature_norm(x)
-
         x = self.mlp(x)
-
         q_value = self.q_out(x)
-
-        q_value = q_value.cpu()
 
         return q_value

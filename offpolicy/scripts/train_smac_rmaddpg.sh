@@ -2,7 +2,7 @@
 env="StarCraft2"
 map="3m"
 algo="rmaddpg"
-exp="no-dict"
+exp="debug"
 seed_max=1
 
 echo "env is ${env}, map is ${map}, algo is ${algo}, exp is ${exp}, max seed is ${seed_max}"

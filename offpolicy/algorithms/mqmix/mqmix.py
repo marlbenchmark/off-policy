@@ -1,7 +1,7 @@
 import torch
 import copy
 from offpolicy.algorithms.mqmix.algorithm.mq_mixer import M_QMixer
-from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss
+from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, check
 import numpy as np
 from offpolicy.utils.popart import PopArt
 
@@ -18,6 +18,7 @@ class M_QMix:
         self.huber_delta = self.args.huber_delta
 
         self.device = device
+        self.tpdv = dict(dtype=torch.float32, device=device)
         self.lr = self.args.lr
         self.tau = self.args.tau
         self.opti_eps = self.args.opti_eps
@@ -54,7 +55,7 @@ class M_QMix:
 
         self.optimizer = torch.optim.Adam(params=self.parameters, lr=self.lr, eps=self.opti_eps)
 
-        if args.double_q:
+        if args.use_double_q:
             print("double Q learning will be used")
 
     def train_policy_on_batch(self, batch, use_same_share_obs):
@@ -67,14 +68,14 @@ class M_QMix:
         importance_weights, idxes = batch
 
         if use_same_share_obs:
-            cent_obs_batch = torch.FloatTensor(cent_obs_batch[self.policy_ids[0]])
-            cent_nobs_batch = torch.FloatTensor(cent_nobs_batch[self.policy_ids[0]])
+            cent_obs_batch = check(cent_obs_batch[self.policy_ids[0]])
+            cent_nobs_batch = check(cent_nobs_batch[self.policy_ids[0]])
         else:
             choose_agent_id = 0
-            cent_obs_batch = torch.FloatTensor(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
-            cent_nobs_batch = torch.FloatTensor(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_obs_batch = check(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_nobs_batch = check(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
 
-        dones_env_batch = torch.FloatTensor(dones_env_batch[self.policy_ids[0]])
+        dones_env_batch = check(dones_env_batch[self.policy_ids[0]]).to(**self.tpdv)
 
         # individual agent q value sequences: each element is of shape (batch_size, 1)
         agent_q_sequences = []
@@ -84,10 +85,10 @@ class M_QMix:
             policy = self.policies[p_id]
             target_policy = self.target_policies[p_id]
             # get data related to the policy id
-            rewards = torch.FloatTensor(rew_batch[p_id][0])
-            curr_obs_batch = torch.FloatTensor(obs_batch[p_id])
-            curr_act_batch = torch.FloatTensor(act_batch[p_id])
-            curr_nobs_batch = torch.FloatTensor(nobs_batch[p_id])
+            rewards = check(rew_batch[p_id][0]).to(**self.tpdv)
+            curr_obs_batch = check(obs_batch[p_id])
+            curr_act_batch = check(act_batch[p_id]).to(**self.tpdv)
+            curr_nobs_batch = check(nobs_batch[p_id])
 
             # stacked_obs_batch size : [agent_num*batch_size, obs_shape]
             stacked_act_batch = torch.cat(list(curr_act_batch), dim=-2)
@@ -95,7 +96,7 @@ class M_QMix:
             stacked_nobs_batch = torch.cat(list(curr_nobs_batch), dim=-2)
 
             if navail_act_batch[p_id] is not None:
-                curr_navail_act_batch = torch.FloatTensor(navail_act_batch[p_id])
+                curr_navail_act_batch = check(navail_act_batch[p_id])
                 stacked_navail_act_batch = torch.cat(list(curr_navail_act_batch), dim=-2)
             else:
                 stacked_navail_act_batch = None
@@ -111,32 +112,26 @@ class M_QMix:
                 ind = 0
                 Q_per_part = []
                 for i in range(len(policy.act_dim)):
-                    curr_stacked_act_batch = stacked_act_batch[:,
-                                                               ind: ind + policy.act_dim[i]]
-                    curr_stacked_act_batch_ind = curr_stacked_act_batch.max(
-                        dim=-1)[1]
+                    curr_stacked_act_batch = stacked_act_batch[:, ind: ind + policy.act_dim[i]]
+                    curr_stacked_act_batch_ind = curr_stacked_act_batch.max(dim=-1)[1]
                     curr_all_q_out_sequence = pol_all_q_out_sequence[i]
-                    curr_pol_q_out_sequence = torch.gather(
-                        curr_all_q_out_sequence, 1, curr_stacked_act_batch_ind.unsqueeze(dim=-1))
+                    curr_pol_q_out_sequence = torch.gather(curr_all_q_out_sequence, 1, curr_stacked_act_batch_ind.unsqueeze(dim=-1))
                     Q_per_part.append(curr_pol_q_out_sequence)
                     ind += policy.act_dim[i]
                 Q_sequence_combined_parts = torch.cat(Q_per_part, dim=-1)
-                pol_agents_q_out_sequence = Q_sequence_combined_parts.split(
-                    split_size=batch_size, dim=-2)
+                pol_agents_q_out_sequence = Q_sequence_combined_parts.split(split_size=batch_size, dim=-2)
             else:
                 # get the q values associated with the action taken acording ot the batch
                 stacked_act_batch_ind = stacked_act_batch.max(dim=-1)[1]
                 # pol_q_out_sequence : batch_size * 1
-                pol_q_out_sequence = torch.gather(
-                    pol_all_q_out_sequence, 1, stacked_act_batch_ind.unsqueeze(dim=-1))
+                pol_q_out_sequence = torch.gather(pol_all_q_out_sequence, 1, stacked_act_batch_ind.unsqueeze(dim=-1))
                 # separate into agent q sequences for each agent, then cat along the final dimension to prepare for mixer input
-                pol_agents_q_out_sequence = pol_q_out_sequence.split(
-                    split_size=batch_size, dim=-2)
+                pol_agents_q_out_sequence = pol_q_out_sequence.split(split_size=batch_size, dim=-2)
 
             agent_q_sequences.append(torch.cat(pol_agents_q_out_sequence, dim=-1))
 
             with torch.no_grad():
-                if self.args.double_q:
+                if self.args.use_double_q:
                     # actions come from live q; get the q values for the final nobs
                     pol_final_qs = policy.get_q_values(stacked_nobs_batch[-1])
 
@@ -149,24 +144,20 @@ class M_QMix:
                             pol_all_curr_q_out_seq = pol_all_q_out_sequence[i]
                             pol_all_nq_out_curr_seq = torch.cat(
                                 (pol_all_curr_q_out_seq[1:], pol_final_curr_qs[None]))
-                            pol_curr_nacts = pol_all_nq_out_curr_seq.max(
-                                dim=-1)[1]
+                            pol_curr_nacts = pol_all_nq_out_curr_seq.max(dim=-1)[1]
                             pol_nacts.append(pol_curr_nacts)
                         #pol_nacts = np.concatenate(pol_nacts, axis=-1)
-                        targ_pol_nq_seq = target_policy.get_q_values(
-                            stacked_nobs_batch, action_batch=pol_nacts)
+                        targ_pol_nq_seq = target_policy.get_q_values(stacked_nobs_batch, action_batch=pol_nacts)
                     else:
                         # cat to form all the next step qs
-                        pol_all_nq_out_sequence = torch.cat(
-                            (pol_all_q_out_sequence[1:], pol_final_qs[None]))
+                        pol_all_nq_out_sequence = torch.cat((pol_all_q_out_sequence[1:], pol_final_qs[None]))
                         # mask out the unavailable actions
                         if stacked_navail_act_batch is not None:
                             pol_all_nq_out_sequence[stacked_navail_act_batch == 0.0] = -1e10
                         # greedily choose actions which maximize the q values and convert these actions to onehot
                         pol_nacts = pol_all_nq_out_sequence.max(dim=-1)[1]
                         # q values given by target but evaluated at actions taken by live
-                        targ_pol_nq_seq = target_policy.get_q_values(
-                            stacked_nobs_batch, action_batch=pol_nacts)
+                        targ_pol_nq_seq = target_policy.get_q_values(stacked_nobs_batch, action_batch=pol_nacts)
                 else:
                     # just choose actions from target policy
                     _, targ_pol_nq_seq = target_policy.get_actions(stacked_nobs_batch,
@@ -176,11 +167,9 @@ class M_QMix:
                     targ_pol_nq_seq = targ_pol_all_nq_seq.max(dim=-1)[0]
                     targ_pol_nq_seq = targ_pol_nq_seq.unsqueeze(-1)
                 # separate the next qs into sequences for each agent
-                pol_agents_nq_sequence = targ_pol_nq_seq.split(
-                    split_size=batch_size, dim=-2)
+                pol_agents_nq_sequence = targ_pol_nq_seq.split(split_size=batch_size, dim=-2)
             # cat target qs along the final dim
-            agent_next_q_sequences.append(
-                torch.cat(pol_agents_nq_sequence, dim=-1))
+            agent_next_q_sequences.append(torch.cat(pol_agents_nq_sequence, dim=-1))
         # combine the agent q value sequences to feed into mixer networks
         agent_q_sequences = torch.cat(agent_q_sequences, dim=-1)
         agent_next_q_sequences = torch.cat(agent_next_q_sequences, dim=-1)
@@ -211,7 +200,7 @@ class M_QMix:
         predicted_Q_tots = predicted_Q_tot_vals
 
         if self.use_value_active_masks:
-            curr_agent_dones = torch.FloatTensor(dones_batch[p_id][choose_agent_id])
+            curr_agent_dones = check(dones_batch[p_id][choose_agent_id]).to(**self.tpdv)
             predicted_Q_tots = predicted_Q_tots * (1 - curr_agent_dones)
             Q_tot_targets = Q_tot_targets * (1 - curr_agent_dones)
 
@@ -222,9 +211,9 @@ class M_QMix:
                 loss = huber_loss(error, self.huber_delta).flatten()
             else:
                 loss = mse_loss(error).flatten()
-            loss = (loss * torch.FloatTensor(importance_weights)).mean()
+            loss = (loss * check(importance_weights).to(**self.tpdv)).mean()
             # new priorities are a combination of the maximum TD error across sequence and the mean TD error across sequence
-            new_priorities = error.abs().detach().numpy().flatten() + self.per_eps
+            new_priorities = error.abs().cpu().detach().numpy().flatten() + self.per_eps
         else:
             if self.use_huber_loss:
                 loss = huber_loss(error, self.huber_delta).mean()
@@ -256,7 +245,6 @@ class M_QMix:
             self.target_mixer.load_state_dict(self.mixer.state_dict())
 
     def soft_target_updates(self):
-        print("soft update targets")
         for policy_id in self.policy_ids:
             soft_update(
                 self.target_policies[policy_id], self.policies[policy_id], self.tau)

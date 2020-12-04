@@ -2,23 +2,23 @@ import numpy as np
 import gym
 from mujoco_worldgen.util.types import store_args
 from mujoco_worldgen.util.geometry import raycast
-from envs.hns.wrappers.multi_agent import (SplitMultiAgentActions, SplitObservations,
+from offpolicy.envs.hns.wrappers.multi_agent import (SplitMultiAgentActions, SplitObservations,
                                            SelectKeysWrapper)
-from envs.hns.wrappers.util import (DiscretizeActionWrapper, MaskActionWrapper,
+from offpolicy.envs.hns.wrappers.util import (DiscretizeActionWrapper, MaskActionWrapper,
                                     DiscardMujocoExceptionEpisodes, SpoofEntityWrapper,
                                     AddConstantObservationsWrapper,
                                     ConcatenateObsWrapper)
-from envs.hns.wrappers.manipulation import (GrabObjWrapper, GrabClosestWrapper, TimeWrapper,
+from offpolicy.envs.hns.wrappers.manipulation import (GrabObjWrapper, GrabClosestWrapper, TimeWrapper,
                                             LockObjWrapper, LockAllWrapper)
-from envs.hns.wrappers.lidar import Lidar
-from envs.hns.wrappers.team import TeamMembership
-from envs.hns.wrappers.line_of_sight import AgentAgentObsMask2D, AgentGeomObsMask2D
-from envs.hns.envs.base import Base
-from envs.hns.modules.agents import Agents, AgentManipulation
-from envs.hns.modules.walls import WallScenarios
-from envs.hns.modules.objects import Boxes, Cylinders, LidarSites
-from envs.hns.modules.world import FloorAttributes, WorldConstants
-from envs.hns.modules.util import (uniform_placement, center_placement,
+from offpolicy.envs.hns.wrappers.lidar import Lidar
+from offpolicy.envs.hns.wrappers.team import TeamMembership
+from offpolicy.envs.hns.wrappers.line_of_sight import AgentAgentObsMask2D, AgentGeomObsMask2D
+from offpolicy.envs.hns.envs.base import Base
+from offpolicy.envs.hns.modules.agents import Agents, AgentManipulation
+from offpolicy.envs.hns.modules.walls import WallScenarios
+from offpolicy.envs.hns.modules.objects import Boxes, Cylinders, LidarSites
+from offpolicy.envs.hns.modules.world import FloorAttributes, WorldConstants
+from offpolicy.envs.hns.modules.util import (uniform_placement, center_placement,
                                    uniform_placement_middle)
 
 

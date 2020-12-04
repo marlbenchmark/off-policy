@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from ma_policy.util import shape_list
+from offpolicy.envs.hns.ma_policy.util import shape_list
 
 
 #################

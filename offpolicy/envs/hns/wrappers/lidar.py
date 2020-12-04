@@ -2,7 +2,7 @@ import gym
 import numpy as np
 from mujoco_worldgen.util.rotation import quat_from_angle_and_axis
 from mujoco_worldgen.util.geometry import raycast
-from envs.hns.wrappers.util import update_obs_space
+from offpolicy.envs.hns.wrappers.util import update_obs_space
 
 
 class Lidar(gym.ObservationWrapper):

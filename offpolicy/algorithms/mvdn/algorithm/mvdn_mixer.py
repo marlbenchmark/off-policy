@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from offpolicy.utils.util import init
+from offpolicy.utils.util import check
 
 
 class M_VDNMixer(nn.Module):
@@ -23,12 +23,8 @@ class M_VDNMixer(nn.Module):
         else:
             self.num_mixer_q_inps = self.num_agents
 
-    def forward(self, agent_q_inps, states):
+    def forward(self, agent_q_inps):
         """outputs Q_tot, using the individual agent Q values and the centralized env state as inputs"""
+        agent_q_inps = check(agent_q_inps)
 
-        if type(agent_q_inps) == np.ndarray:
-            agent_q_inps = torch.FloatTensor(agent_q_inps)
-        if type(states) == np.ndarray:
-            states = torch.FloatTensor(states)
-
-        return agent_q_inps.sum(dim=-1).view(-1, 1, 1), None
+        return agent_q_inps.sum(dim=-1).view(-1, 1, 1)

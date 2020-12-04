@@ -7,7 +7,7 @@ def get_config():
 
     # prepare parameters
     parser.add_argument("--algorithm_name", type=str, default="rmatd3", choices=[
-                        "rmatd3", "rmaddpg", "rmasac", "qmix", "vdn", "matd3", "maddpg", "masac", "mqmix", "mvdn"])
+                        "rmatd3", "rmaddpg", "rmasac", "rmasac-dis", "qmix", "vdn", "matd3", "maddpg", "masac", "mqmix", "mvdn"])
     parser.add_argument("--experiment_name", type=str, default="check")
     parser.add_argument("--seed", type=int, default=1,
                         help="Random seed for numpy/torch")
@@ -72,6 +72,10 @@ def get_config():
                         help="Whether to use Orthogonal initialization for weights and 0 initialization for biases")
     parser.add_argument("--gain", type=float, default=0.01,
                         help="The gain # of last action layer")
+    parser.add_argument("--use_conv1d", action='store_true',
+                        default=False, help="Whether to use conv1d")
+    parser.add_argument("--stacked_frames", type=int, default=1,
+                        help="Dimension of hidden layers for actor/critic networks")
 
     # recurrent parameters
     parser.add_argument('--prev_act_inp', action='store_true', default=False,

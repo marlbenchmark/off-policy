@@ -25,8 +25,7 @@ class MADDPG:
             [agent_id for agent_id in range(self.num_agents) if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
         if self.use_popart:
-            self.value_normalizer = {policy_id: PopArt(
-                1) for policy_id in self.policies.keys()}
+            self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
 
     # @profile
     def get_update_info(self, update_policy_id, obs_batch, act_batch, nobs_batch, navail_act_batch):

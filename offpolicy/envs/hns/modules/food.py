@@ -1,6 +1,6 @@
 import numpy as np
 from mujoco_worldgen.util.types import store_args
-from envs.hns.modules import EnvModule, rejection_placement
+from offpolicy.envs.hns.modules import EnvModule, rejection_placement
 
 
 class Food(EnvModule):

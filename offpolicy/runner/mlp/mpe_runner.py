@@ -77,17 +77,12 @@ class MPERunner(MlpRunner):
                 acts_batch = policy.get_random_actions(obs_batch)
             else:
                 # get actions with exploration noise (eps-greedy/Gaussian)
-                if self.algorithm_name == "masac":
-                    acts_batch, _ = policy.get_actions(obs_batch, sample=explore)
-                else:
-                    acts_batch, _ = policy.get_actions(obs_batch,
-                                                       t_env=self.total_env_steps,
-                                                       explore=explore,
-                                                       use_target=False,
-                                                       use_gumbel=False)
+                acts_batch, _ = policy.get_actions(obs_batch,
+                                                    t_env=self.total_env_steps,
+                                                    explore=explore)
 
             if not isinstance(acts_batch, np.ndarray):
-                acts_batch = acts_batch.detach().numpy()
+                acts_batch = acts_batch.cpu().detach().numpy()
             env_acts = np.split(acts_batch, n_rollout_threads)
 
             # env step and store the relevant episode information
@@ -213,17 +208,12 @@ class MPERunner(MlpRunner):
                     act = policy.get_random_actions(agent_obs[agent_id])
                 else:
                     # get actions with exploration noise (eps-greedy/Gaussian)
-                    if self.algorithm_name == "masac":
-                        act, _ = policy.get_actions(agent_obs[agent_id], sample=explore)
-                    else:
-                        act, _ = policy.get_actions(agent_obs[agent_id],
-                                                    t_env=self.total_env_steps,
-                                                    explore=explore,
-                                                    use_target=False,
-                                                    use_gumbel=False)
+                    act, _ = policy.get_actions(agent_obs[agent_id],
+                                                t_env=self.total_env_steps,
+                                                explore=explore)
 
                 if not isinstance(act, np.ndarray):
-                    act = act.detach().numpy()
+                    act = act.cpu().detach().numpy()
                 acts[agent_id] = act
 
             env_acts = []
@@ -253,7 +243,7 @@ class MPERunner(MlpRunner):
             next_share_obs = np.array(next_share_obs)
 
             next_agent_obs = []
-            for agent_id in range(n_rollout_threads):
+            for agent_id in range(self.num_agents):
                 next_env_obs = []
                 for no in next_obs:
                     next_env_obs.append(no[agent_id])
@@ -276,7 +266,7 @@ class MPERunner(MlpRunner):
             agent_obs = next_agent_obs
             share_obs = next_share_obs
 
-            if self.explore:
+            if explore:
                 self.obs = obs
                 self.share_obs = share_obs
                 self.buffer.insert(n_rollout_threads,

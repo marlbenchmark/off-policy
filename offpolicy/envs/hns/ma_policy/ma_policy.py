@@ -8,10 +8,10 @@ from functools import partial
 from collections import OrderedDict
 from baselines.common.distributions import make_pdtype
 
-from ma_policy.util import listdict2dictnp, normc_initializer, shape_list, l2_loss
-from ma_policy.variable_schema import VariableSchema, BATCH, TIMESTEPS
-from ma_policy.normalizers import EMAMeanStd
-from ma_policy.graph_construct import construct_tf_graph, construct_schemas_zero_state
+from offpolicy.envs.hns.ma_policy.util import listdict2dictnp, normc_initializer, shape_list, l2_loss
+from offpolicy.envs.hns.ma_policy.variable_schema import VariableSchema, BATCH, TIMESTEPS
+from offpolicy.envs.hns.ma_policy.normalizers import EMAMeanStd
+from offpolicy.envs.hns.ma_policy.graph_construct import construct_tf_graph, construct_schemas_zero_state
 
 
 class MAPolicy(object):

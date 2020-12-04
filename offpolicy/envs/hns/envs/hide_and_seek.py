@@ -1,29 +1,29 @@
 import gym
 import numpy as np
 from copy import deepcopy
-from envs.hns.envs.base import Base
-from envs.hns.wrappers.multi_agent import (SplitMultiAgentActions, JoinMultiAgentActions,
+from offpolicy.envs.hns.envs.base import Base
+from offpolicy.envs.hns.wrappers.multi_agent import (SplitMultiAgentActions, JoinMultiAgentActions,
                                            SplitObservations, SelectKeysWrapper)
-from envs.hns.wrappers.util import (DiscretizeActionWrapper, ConcatenateObsWrapper,
+from offpolicy.envs.hns.wrappers.util import (DiscretizeActionWrapper, ConcatenateObsWrapper,
                                     MaskActionWrapper, SpoofEntityWrapper,
                                     DiscardMujocoExceptionEpisodes,
                                     AddConstantObservationsWrapper)
-from envs.hns.wrappers.manipulation import (GrabObjWrapper, GrabClosestWrapper,
+from offpolicy.envs.hns.wrappers.manipulation import (GrabObjWrapper, GrabClosestWrapper,
                                             LockObjWrapper, LockAllWrapper, TimeWrapper)
-from envs.hns.wrappers.lidar import Lidar
-from envs.hns.wrappers.line_of_sight import (AgentAgentObsMask2D, AgentGeomObsMask2D,
+from offpolicy.envs.hns.wrappers.lidar import Lidar
+from offpolicy.envs.hns.wrappers.line_of_sight import (AgentAgentObsMask2D, AgentGeomObsMask2D,
                                              AgentSiteObsMask2D)
-from envs.hns.wrappers.prep_phase import (PreparationPhase, NoActionsInPrepPhase,
+from offpolicy.envs.hns.wrappers.prep_phase import (PreparationPhase, NoActionsInPrepPhase,
                                           MaskPrepPhaseAction)
-from envs.hns.wrappers.limit_mvmnt import RestrictAgentsRect
-from envs.hns.wrappers.team import TeamMembership
-from envs.hns.wrappers.food import FoodHealthWrapper, AlwaysEatWrapper
-from envs.hns.modules.agents import Agents, AgentManipulation
-from envs.hns.modules.walls import RandomWalls, WallScenarios
-from envs.hns.modules.objects import Boxes, Ramps, LidarSites
-from envs.hns.modules.food import Food
-from envs.hns.modules.world import FloorAttributes, WorldConstants
-from envs.hns.modules.util import (uniform_placement, close_to_other_object_placement,
+from offpolicy.envs.hns.wrappers.limit_mvmnt import RestrictAgentsRect
+from offpolicy.envs.hns.wrappers.team import TeamMembership
+from offpolicy.envs.hns.wrappers.food import FoodHealthWrapper, AlwaysEatWrapper
+from offpolicy.envs.hns.modules.agents import Agents, AgentManipulation
+from offpolicy.envs.hns.modules.walls import RandomWalls, WallScenarios
+from offpolicy.envs.hns.modules.objects import Boxes, Ramps, LidarSites
+from offpolicy.envs.hns.modules.food import Food
+from offpolicy.envs.hns.modules.world import FloorAttributes, WorldConstants
+from offpolicy.envs.hns.modules.util import (uniform_placement, close_to_other_object_placement,
                                    uniform_placement_middle)
 
 

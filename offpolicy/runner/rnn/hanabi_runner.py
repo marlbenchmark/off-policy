@@ -49,8 +49,7 @@ class HanabiRunner(RecRunner):
         episode_step = 0
         terminate_episodes = False
 
-        rnn_states = np.zeros(
-            (self.num_envs, len(self.policy_agents[p_id]), self.hidden_size))
+        rnn_states = torch.zeros((self.num_envs, len(self.policy_agents[p_id]), self.hidden_size))
         if is_multidiscrete(self.policy_info[p_id]['act_space']):
             self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
         else:
@@ -99,31 +98,21 @@ class HanabiRunner(RecRunner):
                     act = policy.get_random_actions(obs[:, agent_id], avail_acts[:, agent_id])
                     # get new rnn hidden state
                     _, rnn_state, _ = policy.get_actions(obs[:, agent_id],
-                                                                      last_acts[:,agent_id],
-                                                                      rnn_states[:,agent_id],
-                                                                      avail_acts[:, agent_id])
+                                                        last_acts[:,agent_id],
+                                                        rnn_states[:,agent_id],
+                                                        avail_acts[:, agent_id])
                 else:
-                    if self.algorithm_name == "rmasac":
-                        act, rnn_state, _ = policy.get_actions(obs[:, agent_id],
-                                                                            last_acts[:,agent_id],
-                                                                            rnn_states[:,agent_id],
-                                                                            avail_acts[:,agent_id],
-                                                                            sample=explore)
-                    else:
-                        # get actions with exploration noise (eps-greedy/Gaussian)
-                        act, rnn_state, _ = policy.get_actions(obs[:, agent_id],
-                                                                            last_acts[:,agent_id],
-                                                                            rnn_states[:,agent_id],
-                                                                            avail_acts[:,agent_id],
-                                                                            t_env=self.total_env_steps,
-                                                                            explore=explore,
-                                                                            use_target=False,
-                                                                            use_gumbel=False)
+                    # get actions with exploration noise (eps-greedy/Gaussian)
+                    act, rnn_state, _ = policy.get_actions(obs[:, agent_id],
+                                                            last_acts[:,agent_id],
+                                                            rnn_states[:,agent_id],
+                                                            avail_acts[:,agent_id],
+                                                            t_env=self.total_env_steps,
+                                                            explore=explore)
+                rnn_states[:, agent_id] = rnn_state.detach()
+                
                 if not isinstance(act, np.ndarray):
-                    act = act.detach().numpy()
-
-                # update rnn hidden state
-                rnn_states[:, agent_id] = rnn_state.detach().numpy()
+                    act = act.cpu().detach().numpy()
                 last_acts[:, agent_id] = act
 
                 # unpack actions to format needed to step env (list of dicts, dict mapping agent_id to action)

@@ -7,6 +7,7 @@
 |   MADDPG   | :heavy_check_mark: | :heavy_check_mark: |     :x:     |
 |   MATD3    | :heavy_check_mark: | :heavy_check_mark: |     :x:     |
 |   MASAC    | :heavy_check_mark: | :heavy_check_mark: |     :x:     |
+|   MASAC-discrete    | :heavy_check_mark: | :heavy_check_mark: |     :x:     |
 |    QMIX    | :heavy_check_mark: | :heavy_check_mark: |     :x:     |
 |    VDN     | :heavy_check_mark: | :heavy_check_mark: |     :x:     |
 

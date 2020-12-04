@@ -2,7 +2,7 @@ import numpy as np
 from mujoco_worldgen.util.types import store_args
 from mujoco_worldgen import Geom
 from mujoco_worldgen.transforms import set_geom_attr_transform
-from envs.hns.modules import EnvModule
+from offpolicy.envs.hns.modules import EnvModule
 
 
 class Wall:

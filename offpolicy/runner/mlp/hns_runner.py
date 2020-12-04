@@ -84,17 +84,12 @@ class HNSRunner(MlpRunner):
                     acts_batch = policy.get_random_actions(obs_batch)
                 else:
                     # get actions with exploration noise (eps-greedy/Gaussian)
-                    if self.algorithm_name == "masac":
-                        acts_batch, _ = policy.get_actions(obs_batch, sample=explore)
-                    else:
-                        acts_batch, _ = policy.get_actions(obs_batch,
-                                                           t_env=self.total_env_steps,
-                                                           explore=explore,
-                                                           use_target=False,
-                                                           use_gumbel=False)
+                    acts_batch, _ = policy.get_actions(obs_batch,
+                                                        t_env=self.total_env_steps,
+                                                        explore=explore)
                 # update rnn hidden state
                 if not isinstance(acts_batch, np.ndarray):
-                    acts_batch = acts_batch.detach().numpy()
+                    acts_batch = acts_batch.cpu().detach().numpy()
                 env_acts = np.split(acts_batch, n_rollout_threads)
 
                 # env step and store the relevant episode information

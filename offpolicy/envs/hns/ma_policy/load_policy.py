@@ -6,7 +6,7 @@ import sys
 import traceback
 import cloudpickle as pickle
 
-from ma_policy.ma_policy import MAPolicy
+from offpolicy.envs.hns.ma_policy.ma_policy import MAPolicy
 
 
 def shape_list(x):

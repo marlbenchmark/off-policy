@@ -10,6 +10,11 @@ import torch.nn.functional as F
 import torch.distributed as dist
 from torch.autograd import Variable
 
+def check(input):
+    return torch.from_numpy(input) if type(input) == np.ndarray else input
+
+def _t2n(x):
+    return x.detach().cpu().numpy()
 
 class FixedCategorical(torch.distributions.Categorical):
     def sample(self):
@@ -149,27 +154,23 @@ def average_gradients(model):
         param.grad.data /= size
 
 
-def onehot_from_logits(logits, available_actions=None, eps=0.0):
+def onehot_from_logits(logits, avail_logits=None, eps=0.0):
     """
     Given batch of logits, return one-hot sample using epsilon greedy strategy
     (based on given epsilon)
     """
     # get best (according to current policy) actions in one-hot form
-    if type(logits) == np.ndarray:
-        logits = torch.FloatTensor(logits)
-    if type(available_actions) == np.ndarray:
-        available_actions = torch.FloatTensor(available_actions)
+    logits = check(logits)
+    avail_logits = check(avail_logits)
 
     dim = len(logits.shape) - 1
-    logits_avail = logits.clone()
-    logits_avail[available_actions == 0] = -1e10
-    argmax_acs = (logits_avail == logits_avail.max(
-        dim, keepdim=True)[0]).float()
+    logits_clone = logits.clone()
+    logits_clone[avail_logits == 0] = -1e10
+    argmax_acs = (logits_clone == logits_clone.max(dim, keepdim=True)[0]).float()
     if eps == 0.0:
         return argmax_acs
     # get random actions in one-hot form
-    rand_acs = Variable(torch.eye(logits.shape[1])[[np.random.choice(
-        range(logits.shape[1]), size=logits.shape[0])]], requires_grad=False)
+    rand_acs = Variable(torch.eye(logits.shape[1])[[np.random.choice(range(logits.shape[1]), size=logits.shape[0])]], requires_grad=False)
     # chooses between best and random actions using epsilon greedy
     return torch.stack([argmax_acs[i] if r > eps else rand_acs[i] for i, r in
                         enumerate(torch.rand(logits.shape[0]))])
@@ -193,7 +194,7 @@ def gumbel_softmax_sample(logits, temperature, device='cpu'):
     return F.softmax(y / temperature, dim=dim)
 
 # modified for PyTorch from https://github.com/ericjang/gumbel-softmax/blob/master/Categorical%20VAE.ipynb
-def gumbel_softmax(logits, available_actions=None, temperature=1.0, hard=False, device='cpu'):
+def gumbel_softmax(logits, avail_logits=None, temperature=1.0, hard=False, device='cpu'):
     """Sample from the Gumbel-Softmax distribution and optionally discretize.
     Args:
       logits: [batch_size, n_class] unnormalized log-probs
@@ -206,7 +207,7 @@ def gumbel_softmax(logits, available_actions=None, temperature=1.0, hard=False, 
     """
     y = gumbel_softmax_sample(logits, temperature, device)
     if hard:
-        y_hard = onehot_from_logits(y, available_actions)
+        y_hard = onehot_from_logits(y, avail_logits)
         y = (y_hard - y).detach() + y
     return y
 
@@ -280,7 +281,7 @@ def is_multidiscrete(space):
 
 def make_onehot(int_action, action_dim, seq_len=None):
     if type(int_action) == torch.Tensor:
-        int_action = int_action.numpy()
+        int_action = int_action.cpu().numpy()
     if not seq_len:
         return np.eye(action_dim)[int_action]
     if seq_len:
@@ -291,14 +292,12 @@ def make_onehot(int_action, action_dim, seq_len=None):
         return np.stack(onehot_actions)
 
 
-def avail_choose(x, available_actions=None):
-    if type(x) == np.ndarray:
-        x = torch.FloatTensor(x)
-    if type(available_actions) == np.ndarray:
-        available_actions = torch.FloatTensor(available_actions)
-
-    x[available_actions == 0] = -1e10
-    return FixedCategorical(logits=x)
+def avail_choose(x, avail_x=None):
+    x = check(x)
+    if avail_x is not None:
+        avail_x = check(avail_x)
+        x[avail_x == 0] = -1e10
+    return x#FixedCategorical(logits=x)
 
 
 def tile_images(img_nhwc):

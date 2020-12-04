@@ -5,9 +5,9 @@ from copy import deepcopy
 import logging
 import traceback
 import sys
-from ma_policy.variable_schema import VariableSchema, BATCH, TIMESTEPS
-from ma_policy.util import shape_list
-from ma_policy.layers import (entity_avg_pooling_masked, entity_max_pooling_masked,
+from offpolicy.envs.hns.ma_policy.variable_schema import VariableSchema, BATCH, TIMESTEPS
+from offpolicy.envs.hns.ma_policy.util import shape_list
+from offpolicy.envs.hns.ma_policy.layers import (entity_avg_pooling_masked, entity_max_pooling_masked,
                               entity_concat, concat_entity_masks, residual_sa_block,
                               circ_conv1d)
 

@@ -1,24 +1,24 @@
 import gym
 import numpy as np
-from envs.hns.wrappers.multi_agent import (SplitMultiAgentActions, SplitObservations,
+from offpolicy.envs.hns.wrappers.multi_agent import (SplitMultiAgentActions, SplitObservations,
                                            SelectKeysWrapper)
-from envs.hns.wrappers.util import (DiscretizeActionWrapper, MaskActionWrapper,
+from offpolicy.envs.hns.wrappers.util import (DiscretizeActionWrapper, MaskActionWrapper,
                                     DiscardMujocoExceptionEpisodes,
                                     AddConstantObservationsWrapper,
                                     SpoofEntityWrapper, ConcatenateObsWrapper)
-from envs.hns.wrappers.manipulation import (GrabObjWrapper, GrabClosestWrapper, TimeWrapper,
+from offpolicy.envs.hns.wrappers.manipulation import (GrabObjWrapper, GrabClosestWrapper, TimeWrapper,
                                             LockObjWrapper, LockAllWrapper)
-from envs.hns.wrappers.lidar import Lidar
-from envs.hns.wrappers.line_of_sight import AgentAgentObsMask2D, AgentGeomObsMask2D
-from envs.hns.wrappers.team import TeamMembership
-from envs.hns.wrappers.util import NumpyArrayRewardWrapper
-from envs.hns.modules.agents import Agents, AgentManipulation
-from envs.hns.modules.walls import RandomWalls, WallScenarios
-from envs.hns.modules.objects import Boxes, Ramps, LidarSites
-from envs.hns.modules.world import FloorAttributes, WorldConstants
-from envs.hns.modules.util import uniform_placement, center_placement
-from envs.hns.envs.base import Base
-from envs.hns.envs.hide_and_seek import quadrant_placement, outside_quadrant_placement
+from offpolicy.envs.hns.wrappers.lidar import Lidar
+from offpolicy.envs.hns.wrappers.line_of_sight import AgentAgentObsMask2D, AgentGeomObsMask2D
+from offpolicy.envs.hns.wrappers.team import TeamMembership
+from offpolicy.envs.hns.wrappers.util import NumpyArrayRewardWrapper
+from offpolicy.envs.hns.modules.agents import Agents, AgentManipulation
+from offpolicy.envs.hns.modules.walls import RandomWalls, WallScenarios
+from offpolicy.envs.hns.modules.objects import Boxes, Ramps, LidarSites
+from offpolicy.envs.hns.modules.world import FloorAttributes, WorldConstants
+from offpolicy.envs.hns.modules.util import uniform_placement, center_placement
+from offpolicy.envs.hns.envs.base import Base
+from offpolicy.envs.hns.envs.hide_and_seek import quadrant_placement, outside_quadrant_placement
 
 
 class LockObjectsTask(gym.Wrapper):

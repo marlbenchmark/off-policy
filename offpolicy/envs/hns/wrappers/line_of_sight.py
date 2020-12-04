@@ -1,7 +1,7 @@
 import gym
 import numpy as np
-from envs.hns.util.vision import insight, in_cone2d
-from envs.hns.wrappers.util import update_obs_space
+from offpolicy.envs.hns.util.vision import insight, in_cone2d
+from offpolicy.envs.hns.wrappers.util import update_obs_space
 
 
 class AgentAgentObsMask2D(gym.ObservationWrapper):

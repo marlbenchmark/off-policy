@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from envs.hns.wrappers.util import update_obs_space
+from offpolicy.envs.hns.wrappers.util import update_obs_space
 from gym.spaces import Tuple, MultiDiscrete
 
 

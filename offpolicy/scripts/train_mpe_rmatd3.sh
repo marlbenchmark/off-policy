@@ -4,8 +4,8 @@ scenario="simple_spread"
 num_landmarks=3
 num_agents=3
 algo="rmatd3"
-exp="icml-normrew"
-seed_max=5
+exp="debug"
+seed_max=1
 
 echo "env is ${env}, scenario is ${scenario}, algo is ${algo}, exp is ${exp}, max seed is ${seed_max}"
 

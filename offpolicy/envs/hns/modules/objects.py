@@ -5,8 +5,8 @@ from mujoco_worldgen.util.sim_funcs import (qpos_idxs_from_joint_prefix,
 from mujoco_worldgen import Geom, Material, ObjFromXML
 from mujoco_worldgen.transforms import set_geom_attr_transform
 from mujoco_worldgen.util.rotation import normalize_angles
-from envs.hns.util.transforms import remove_hinge_axis_transform
-from envs.hns.modules import EnvModule, rejection_placement, get_size_from_xml
+from offpolicy.envs.hns.util.transforms import remove_hinge_axis_transform
+from offpolicy.envs.hns.modules import EnvModule, rejection_placement, get_size_from_xml
 
 
 class Boxes(EnvModule):

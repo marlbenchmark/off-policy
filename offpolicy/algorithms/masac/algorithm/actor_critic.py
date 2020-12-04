@@ -35,12 +35,10 @@ class Critic(nn.Module):
         self.mlp2 = MLPLayer(input_dim, self.hidden_size, self._layer_N,
                              self._use_orthogonal, self._use_ReLU).to(self.device)
 
-        if self._use_orthogonal:
-            def init_(m): return init(m, nn.init.orthogonal_,
-                                      lambda x: nn.init.constant_(x, 0))
-        else:
-            def init_(m): return init(m, nn.init.xavier_uniform_,
-                                      lambda x: nn.init.constant_(x, 0))
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
+
+        def init_(m):
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0))
 
         self.q1_out = init_(nn.Linear(self.hidden_size, 1)).to(self.device)
         self.q2_out = init_(nn.Linear(self.hidden_size, 1)).to(self.device)
@@ -96,12 +94,10 @@ class DiscreteActor(nn.Module):
                             self._use_orthogonal, self._use_ReLU).to(self.device)
 
         # get action from rnn hidden state
-        if self._use_orthogonal:
-            def init_(m): return init(m, nn.init.orthogonal_,
-                                      lambda x: nn.init.constant_(x, 0), self._gain)
-        else:
-            def init_(m): return init(m, nn.init.xavier_uniform_,
-                                      lambda x: nn.init.constant_(x, 0), self._gain)
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
+
+        def init_(m):
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0), self._gain)
 
         if isinstance(self.act_dim, np.ndarray):
             # MultiDiscrete setting: have n Linear layers for each action
@@ -223,12 +219,10 @@ class GaussianActor(nn.Module):
                             self._use_orthogonal, self._use_ReLU).to(self.device)
 
         # get action from rnn hidden state
-        if self._use_orthogonal:
-            def init_(m): return init(m, nn.init.orthogonal_,
-                                      lambda x: nn.init.constant_(x, 0))
-        else:
-            def init_(m): return init(m, nn.init.xavier_uniform_,
-                                      lambda x: nn.init.constant_(x, 0))
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
+
+        def init_(m):
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0), self._gain)
 
         self.mean_layer = init_(
             nn.Linear(self.hidden_size, self.act_dim)).to(self.device)

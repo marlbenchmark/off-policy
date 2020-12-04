@@ -92,26 +92,18 @@ class MPERunner(RecRunner):
                                                             rnn_states_batch)
             else:
                 # get actions with exploration noise (eps-greedy/Gaussian)
-                if self.algorithm_name == "rmasac":
-                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                        last_acts_batch,
-                                                                        rnn_states_batch,
-                                                                        sample=explore)
-                else:
-                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
                                                                         last_acts_batch,
                                                                         rnn_states_batch,
                                                                         t_env=self.total_env_steps,
-                                                                        explore=explore,
-                                                                        use_target=False,
-                                                                        use_gumbel=False)
+                                                                        explore=explore)
             # update rnn hidden state
-            rnn_states_batch = rnn_states_batch.detach().numpy()
-            if not isinstance(acts_batch, np.ndarray):
-                acts_batch = acts_batch.detach().numpy()
+            rnn_states_batch = rnn_states_batch.detach()
             last_acts_batch = acts_batch
-            env_acts = np.split(acts_batch, self.num_envs)
+            if not isinstance(acts_batch, np.ndarray):
+                acts_batch = acts_batch.cpu().detach().numpy()
 
+            env_acts = np.split(acts_batch, self.num_envs)
             # env step and store the relevant episode information
             next_obs, rewards, dones, infos = env.step(env_acts)
             next_share_obs = next_obs.reshape(self.num_envs, -1)
@@ -206,7 +198,7 @@ class MPERunner(RecRunner):
 
             # init
             episode_obs[p_id] = np.zeros((self.episode_length, self.num_envs, 1, agent_obs[i].shape[-1]), dtype=np.float32)
-            episode_share_obs[p_id] = np.zeros((self.episode_length, self.num_envs, 1, share_obs.shape[-1]), dtype=np.float32)
+            episode_share_obs[p_id] = np.zeros((self.episode_length, self.num_envs, share_obs.shape[-1]), dtype=np.float32)
             episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
             episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
             accumulated_rewards[p_id] = []
@@ -243,14 +235,14 @@ class MPERunner(RecRunner):
                                                                 last_acts[agent_id],
                                                                 rnn_states[agent_id],
                                                                 t_env=self.total_env_steps,
-                                                                explore=explore,
-                                                                use_target=False,
-                                                                use_gumbel=False)
+                                                                explore=explore)
                 # update rnn hidden state
-                rnn_states[agent_id] = rnn_state.detach().numpy()
+                if not isinstance(rnn_state, np.ndarray):
+                    rnn_states[agent_id] = rnn_state.cpu().detach().numpy()
 
                 if not isinstance(act, np.ndarray):
-                    act = act.detach().numpy()
+                    act = act.cpu().detach().numpy()
+                    
                 last_acts[agent_id] = act
 
             env_acts = []
