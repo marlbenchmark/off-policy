@@ -111,87 +111,27 @@ class MlpPolicyBuffer(object):
         # obs: [step, episode, agent, dim]
         episode_length = obs.shape[0]
         assert episode_length == num_insert_steps, ("different size!")
-        left_steps = self.buffer_size - self.current_i  # 100 - 99 - 1 = 0
-        if left_steps >= num_insert_steps:
-            # 98 + 1 = 99
-            self.obs[self.current_i:(
-                self.current_i + num_insert_steps)] = obs.copy()
-            self.share_obs[self.current_i:(
-                self.current_i + num_insert_steps)] = share_obs.copy()
-            self.acts[self.current_i:(
-                self.current_i + num_insert_steps)] = acts.copy()
-            self.rewards[self.current_i:(
-                self.current_i + num_insert_steps)] = rewards.copy()
-            self.next_obs[self.current_i:(
-                self.current_i + num_insert_steps)] = next_obs.copy()
-            self.next_share_obs[self.current_i:(
-                self.current_i + num_insert_steps)] = next_share_obs.copy()
-            self.dones[self.current_i:(
-                self.current_i + num_insert_steps)] = dones.copy()
-            self.dones_env[self.current_i:(
-                self.current_i + num_insert_steps)] = dones_env.copy()
-            if self.use_avail_acts:
-                self.avail_acts[self.current_i:(
-                    self.current_i + num_insert_steps)] = avail_acts.copy()
-                self.next_avail_acts[self.current_i:(
-                    self.current_i + num_insert_steps)] = next_avail_acts.copy()
 
-            idx_range = (self.current_i, self.current_i + num_insert_steps)
-            self.current_i += num_insert_steps  # 99
-
+        if self.current_i + num_insert_steps <= self.buffer_size:
+            idx_range = np.arange(self.current_i, self.current_i + num_insert_steps)       
         else:
-            self.obs[self.current_i:(
-                self.current_i + left_steps)] = obs[0:left_steps].copy()
-            self.share_obs[self.current_i:(
-                self.current_i + left_steps)] = share_obs[0:left_steps].copy()
-            self.acts[self.current_i:(
-                self.current_i + left_steps)] = acts[0:left_steps].copy()
-            self.rewards[self.current_i:(
-                self.current_i + left_steps)] = rewards[0:left_steps].copy()
-            self.next_obs[self.current_i:(
-                self.current_i + left_steps)] = next_obs[0:left_steps].copy()
-            self.next_share_obs[self.current_i:(
-                self.current_i + left_steps)] = next_share_obs[0:left_steps].copy()
-            self.dones[self.current_i:(
-                self.current_i + left_steps)] = dones[0:left_steps].copy()
-            self.dones_env[self.current_i:(
-                self.current_i + left_steps)] = dones_env[0:left_steps].copy()
-            if self.use_avail_acts:
-                self.avail_acts[self.current_i:(
-                    self.current_i + left_steps)] = avail_acts[0:left_steps].copy()
-                self.next_avail_acts[self.current_i:(
-                    self.current_i + left_steps)] = next_avail_acts[0:left_steps].copy()
+            num_left_steps = self.current_i + num_insert_steps - self.buffer_size
+            idx_range = np.concatenate((np.arange(self.current_i, self.buffer_size), np.arange(num_left_steps)))
 
-            self.current_i = 0
-            self.filled_i = self.buffer_size
+        self.obs[idx_range] = obs.copy()
+        self.share_obs[idx_range] = share_obs.copy()
+        self.acts[idx_range] = acts.copy()
+        self.rewards[idx_range] = rewards.copy()
+        self.next_obs[idx_range] = next_obs.copy()
+        self.next_share_obs[idx_range] = next_share_obs.copy()
+        self.dones[idx_range] = dones.copy()
+        self.dones_env[idx_range] = dones_env.copy()
+        if self.use_avail_acts:
+            self.avail_acts[idx_range] = avail_acts.copy()
+            self.next_avail_acts[idx_range] = next_avail_acts.copy()
 
-            self.obs[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = obs[left_steps:].copy()
-            self.share_obs[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = share_obs[left_steps:].copy()
-            self.acts[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = acts[left_steps:].copy()
-            self.rewards[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = rewards[left_steps:].copy()
-            self.next_obs[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = next_obs[left_steps:].copy()
-            self.next_share_obs[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = next_share_obs[left_steps:].copy()
-            self.dones[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = dones[left_steps:].copy()
-            self.dones_env[self.current_i:(
-                self.current_i + num_insert_steps - left_steps)] = dones_env[left_steps:].copy()
-            if self.use_avail_acts:
-                self.avail_acts[self.current_i:(
-                    self.current_i + num_insert_steps - left_steps)] = avail_acts[left_steps:].copy()
-                self.next_avail_acts[self.current_i:(
-                    self.current_i + num_insert_steps - left_steps)] = next_avail_acts[left_steps:].copy()
-            self.current_i = num_insert_steps - left_steps
-
-            idx_range = (-left_steps, -left_steps + num_insert_steps)
-
-        if self.filled_i < self.buffer_size:
-            self.filled_i += num_insert_steps
+        self.current_i = idx_range[-1] + 1 
+        self.filled_i = min(self.filled_i + len(idx_range), self.buffer_size)
 
         return idx_range
 

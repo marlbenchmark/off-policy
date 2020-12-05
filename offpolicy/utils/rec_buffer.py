@@ -77,32 +77,26 @@ class RecPolicyBuffer(object):
                              self.num_agents, obs_shape[0]), dtype=np.float32)
 
         if self.use_same_share_obs:
-            self.share_obs = np.zeros(
-                (self.episode_length, self.buffer_size, share_obs_shape[0]), dtype=np.float32)
+            self.share_obs = np.zeros((self.episode_length, self.buffer_size, share_obs_shape[0]), dtype=np.float32)
         else:
-            self.share_obs = np.zeros(
-                (self.episode_length, self.buffer_size, self.num_agents, share_obs_shape[0]), dtype=np.float32)
+            self.share_obs = np.zeros((self.episode_length, self.buffer_size, self.num_agents, share_obs_shape[0]), dtype=np.float32)
 
-        self.next_obs = np.zeros_like(self.obs, dtype=np.float32)
-        self.next_share_obs = np.zeros_like(self.share_obs, dtype=np.float32)
+        self.next_obs = np.zeros_like(self.obs)
+        self.next_share_obs = np.zeros_like(self.share_obs)
 
         # action
         act_dim = np.sum(get_dim_from_space(act_space))
-        self.acts = np.zeros((self.episode_length, self.buffer_size,
-                              self.num_agents, act_dim), dtype=np.float32)
+        self.acts = np.zeros((self.episode_length, self.buffer_size, self.num_agents, act_dim), dtype=np.float32)
         if self.use_avail_acts:
-            self.avail_acts = np.ones_like(self.acts, dtype=np.float32)
-            self.next_avail_acts = np.ones_like(
-                self.avail_acts, dtype=np.float32)
+            self.avail_acts = np.ones_like(self.acts)
+            self.next_avail_acts = np.ones_like(self.avail_acts)
 
         # rewards
-        self.rewards = np.zeros(
-            (self.episode_length, self.buffer_size, self.num_agents, 1), dtype=np.float32)
+        self.rewards = np.zeros((self.episode_length, self.buffer_size, self.num_agents, 1), dtype=np.float32)
 
         # default to done being True
         self.dones = np.ones_like(self.rewards, dtype=np.float32)
-        self.dones_env = np.ones(
-            (self.episode_length, self.buffer_size, 1), dtype=np.float32)
+        self.dones_env = np.ones((self.episode_length, self.buffer_size, 1), dtype=np.float32)
 
     def __len__(self):
         return self.filled_i
@@ -113,86 +107,27 @@ class RecPolicyBuffer(object):
         # obs: [step, episode, agent, dim]
         episode_length = obs.shape[0]
         assert episode_length == self.episode_length, ("different dimension!")
-        left_size = self.buffer_size - self.current_i  # 100 - 99 - 1 = 0
-        if left_size >= num_insert_episodes:
-            self.obs[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = obs.copy()  # 98 + 1 = 99
-            self.share_obs[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = share_obs.copy()
-            self.acts[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = acts.copy()
-            self.rewards[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = rewards.copy()
-            self.next_obs[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = next_obs.copy()
-            self.next_share_obs[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = next_share_obs.copy()
-            self.dones[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = dones.copy()
-            self.dones_env[:, self.current_i:(
-                self.current_i + num_insert_episodes)] = dones_env.copy()
-            if self.use_avail_acts:
-                self.avail_acts[:, self.current_i:(
-                    self.current_i + num_insert_episodes)] = avail_acts.copy()
-                self.next_avail_acts[:, self.current_i:(
-                    self.current_i + num_insert_episodes)] = next_avail_acts.copy()
 
-            idx_range = (self.current_i, self.current_i + num_insert_episodes)
-            self.current_i += num_insert_episodes  # 99
-
+        if self.current_i + num_insert_episodes <= self.buffer_size:
+            idx_range = np.arange(self.current_i, self.current_i + num_insert_episodes)       
         else:
-            self.obs[:, self.current_i:(
-                self.current_i + left_size)] = obs[:, 0:left_size].copy()
-            self.share_obs[:, self.current_i:(
-                self.current_i + left_size)] = share_obs[:, 0:left_size].copy()
-            self.acts[:, self.current_i:(
-                self.current_i + left_size)] = acts[:, 0:left_size].copy()
-            self.rewards[:, self.current_i:(
-                self.current_i + left_size)] = rewards[:, 0:left_size].copy()
-            self.next_obs[:, self.current_i:(
-                self.current_i + left_size)] = next_obs[:, 0:left_size].copy()
-            self.next_share_obs[:, self.current_i:(
-                self.current_i + left_size)] = next_share_obs[:, 0:left_size].copy()
-            self.dones[:, self.current_i:(
-                self.current_i + left_size)] = dones[:, 0:left_size].copy()
-            self.dones_env[:, self.current_i:(
-                self.current_i + left_size)] = dones_env[:, 0:left_size].copy()
-            if self.use_avail_acts:
-                self.avail_acts[:, self.current_i:(
-                    self.current_i + left_size)] = avail_acts[:, 0:left_size].copy()
-                self.next_avail_acts[:, self.current_i:(
-                    self.current_i + left_size)] = next_avail_acts[:, 0:left_size].copy()
+            num_left_episodes = self.current_i + num_insert_episodes - self.buffer_size
+            idx_range = np.concatenate((np.arange(self.current_i, self.buffer_size), np.arange(num_left_episodes)))
 
-            self.current_i = 0
-            self.filled_i = self.buffer_size
+        self.obs[:, idx_range] = obs.copy() 
+        self.share_obs[:, idx_range] = share_obs.copy()
+        self.acts[:, idx_range] = acts.copy()
+        self.rewards[:, idx_range] = rewards.copy()
+        self.next_obs[:, idx_range] = next_obs.copy()
+        self.next_share_obs[:, idx_range] = next_share_obs.copy()
+        self.dones[:, idx_range] = dones.copy()
+        self.dones_env[:, idx_range] = dones_env.copy()
+        if self.use_avail_acts:
+            self.avail_acts[:, idx_range] = avail_acts.copy()
+            self.next_avail_acts[:, idx_range] = next_avail_acts.copy()
 
-            self.obs[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = obs[:, left_size:].copy()
-            self.share_obs[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = share_obs[:, left_size:].copy()
-            self.acts[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = acts[:, left_size:].copy()
-            self.rewards[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = rewards[:, left_size:].copy()
-            self.next_obs[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = next_obs[:, left_size:].copy()
-            self.next_share_obs[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = next_share_obs[:, left_size:].copy()
-            self.dones[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = dones[:, left_size:].copy()
-            self.dones_env[:, self.current_i:(
-                self.current_i + num_insert_episodes - left_size)] = dones_env[:, left_size:].copy()
-            if self.use_avail_acts:
-                self.avail_acts[:, self.current_i:(
-                    self.current_i + num_insert_episodes - left_size)] = avail_acts[:, left_size:].copy()
-                self.next_avail_acts[:, self.current_i:(
-                    self.current_i + num_insert_episodes - left_size)] = next_avail_acts[:, left_size:].copy()
-            self.current_i = num_insert_episodes - left_size
-
-            idx_range = (-left_size, -left_size + num_insert_episodes)
-
-        if self.filled_i < self.buffer_size:
-            self.filled_i += num_insert_episodes
+        self.current_i = idx_range[-1] + 1 
+        self.filled_i = min(self.filled_i + len(idx_range), self.buffer_size)
 
         return idx_range
 
@@ -206,10 +141,8 @@ class RecPolicyBuffer(object):
             # [length, envs, 1]
             all_dones_env = np.tile(np.expand_dims(
                 self.dones_env[:, :self.filled_i], -1), (1, 1, self.num_agents, 1))
-            first_step_dones_env = np.zeros(
-                (1, self.filled_i, self.num_agents, 1))
-            curr_dones_env = np.concatenate(
-                (first_step_dones_env, all_dones_env[:self.episode_length-1]))
+            first_step_dones_env = np.zeros((1, self.filled_i, self.num_agents, 1))
+            curr_dones_env = np.concatenate((first_step_dones_env, all_dones_env[:self.episode_length-1]))
             temp_rewards = self.rewards[:, :self.filled_i].copy()
             temp_rewards[curr_dones_env == 1.0] = np.nan
 
