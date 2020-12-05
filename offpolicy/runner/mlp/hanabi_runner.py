@@ -80,45 +80,56 @@ class HanabiRunner(MlpRunner):
             self.sum_act_dim = self.policy_act_dim[p_id]
 
         turn_rewards_since_last_action = np.zeros((n_rollout_threads, len(self.policy_agents[p_id]), 1), dtype=np.float32)
-        env_acts = np.ones((n_rollout_threads, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32) * (-1.0)
-        turn_acts_last = turn_acts = np.zeros_like(env_acts)
-        turn_next_obs_last = turn_obs_last = turn_obs = np.zeros_like(obs)
-        turn_next_share_obs_last = turn_share_obs_last = turn_share_obs = np.zeros_like(share_obs)
-        turn_next_avail_acts_last = turn_avail_acts_last = turn_avail_acts = np.zeros_like(avail_acts)
+        turn_rewards_last = np.zeros_like(turn_rewards_since_last_action)
+        turn_rewards = np.zeros_like(turn_rewards_since_last_action)
+
+        turn_acts_last = turn_acts = np.zeros((n_rollout_threads, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
+        
+        turn_obs = np.zeros((n_rollout_threads, len(self.policy_agents[p_id]), *obs.shape[1:]), dtype=np.float32)
+        turn_next_obs_last = np.zeros_like(turn_obs)
+        turn_obs_last = np.zeros_like(turn_obs)
+
+        turn_share_obs = np.zeros((n_rollout_threads, len(self.policy_agents[p_id]), *share_obs.shape[1:]), dtype=np.float32)
+        turn_next_share_obs_last = np.zeros_like(turn_share_obs)
+        turn_share_obs_last = np.zeros_like(turn_share_obs)
+               
+        turn_avail_acts = np.zeros((n_rollout_threads, len(self.policy_agents[p_id]), *avail_acts.shape[1:]), dtype=np.float32)
+        turn_next_avail_acts_last = np.ones_like(turn_avail_acts)
+        turn_avail_acts_last = np.ones_like(turn_avail_acts)
         check_avail_acts = np.ones_like(avail_acts)
-        turn_rewards_last = turn_rewards = np.zeros_like(turn_rewards_since_last_action)
+
         turn_dones_last = turn_dones = np.zeros_like(turn_rewards_since_last_action)
-        turn_dones_env_last = turn_dones_env = np.zeros((n_rollout_threads, 1))
+        turn_dones_env_last = turn_dones_env = np.zeros((n_rollout_threads, 1), dtype=np.float32)
 
         for step in range(self.episode_length):
             reset_choose = np.zeros(n_rollout_threads) == 1.0
             # get actions for all agents to step the env
             for current_agent_id in range(len(self.policy_agents[p_id])):
-                env_acts[:, current_agent_id] = np.ones((n_rollout_threads, 1), dtype=np.float32)*(-1.0)
-                choose = np.any(check_avail_acts[:, current_agent_id] == 1, axis=1)
+                env_acts = np.ones((n_rollout_threads, self.sum_act_dim), dtype=np.float32) * (-1.0)
+                choose = np.any(check_avail_acts == 1, axis=1)
                 if ~np.any(choose):
                     reset_choose = np.ones(n_rollout_threads) == 1.0
                     break
                 if warmup:
                     # completely random actions in pre-training warmup phase
-                    act = policy.get_random_actions(obs[choose, current_agent_id], 
-                                                    avail_acts[choose, current_agent_id])
+                    act = policy.get_random_actions(obs[choose], 
+                                                    avail_acts[choose])
                 else:
-                    act, _ = policy.get_actions(obs[choose, current_agent_id],
-                                                    avail_acts[choose,current_agent_id],
+                    act, _ = policy.get_actions(obs[choose],
+                                                    avail_acts[choose],
                                                     t_env=self.total_env_steps,
                                                     explore=explore)
                 if not isinstance(act, np.ndarray):
                     act = act.cpu().detach().numpy()
 
-                env_acts[choose, current_agent_id] = act
+                env_acts[choose] = act.copy()
 
                 # unpack actions to format needed to step env (list of dicts, dict mapping agent_id to action)
                 if step == 0:
                     pass
                 else:
                     turn_acts_last[:, current_agent_id] = turn_acts[:, current_agent_id]
-                    turn_obs_last[:, current_agent_id] = turn_obs[:,current_agent_id]
+                    turn_obs_last[:, current_agent_id] = turn_obs[:, current_agent_id]
                     turn_share_obs_last[:,current_agent_id] = turn_share_obs[:, current_agent_id]
                     turn_avail_acts_last[:,current_agent_id] = turn_avail_acts[:, current_agent_id]
                     turn_rewards_last[:,current_agent_id] = turn_rewards[:, current_agent_id]
@@ -129,9 +140,9 @@ class HanabiRunner(MlpRunner):
                     turn_next_avail_acts_last[:,current_agent_id] = avail_acts[:, current_agent_id]
 
                 turn_acts[choose, current_agent_id] = act
-                turn_obs[choose, current_agent_id] = obs[choose, current_agent_id]
-                turn_share_obs[choose, current_agent_id] = share_obs[choose, current_agent_id]
-                turn_avail_acts[choose, current_agent_id] = avail_acts[choose, current_agent_id]
+                turn_obs[choose, current_agent_id] = obs[choose]
+                turn_share_obs[choose, current_agent_id] = share_obs[choose]
+                turn_avail_acts[choose, current_agent_id] = avail_acts[choose]
 
                 # env step and store the relevant episode information
                 next_obs, next_share_obs, rewards, dones_original, infos, next_avail_acts = env.step(env_acts)
@@ -140,7 +151,6 @@ class HanabiRunner(MlpRunner):
                 dones = dones_original[:,:,0]
                 dones_env = np.all(dones, axis=1)
                 
-
                 episode_rewards.append(rewards)
 
                 for i in range(n_rollout_threads):
@@ -163,8 +173,8 @@ class HanabiRunner(MlpRunner):
 
                 # deal with all agents
                 turn_dones_env[dones_env ==True] = dones_env_original[dones_env == True].copy()
-                avail_acts[dones_env == True] = np.ones(((dones_env == True).sum(), len(self.policy_agents[p_id]), self.sum_act_dim)).astype(np.float32)
-                check_avail_acts[dones_env == True] = np.zeros(((dones_env == True).sum(), len(self.policy_agents[p_id]), self.sum_act_dim)).astype(np.float32)
+                avail_acts[dones_env == True] = np.ones(((dones_env == True).sum(), self.sum_act_dim)).astype(np.float32)
+                check_avail_acts[dones_env == True] = np.zeros(((dones_env == True).sum(), self.sum_act_dim)).astype(np.float32)
 
                 # deal with current agent
                 turn_dones[dones_env == True, current_agent_id] = np.zeros(((dones_env == True).sum(), 1)).astype(np.float32)

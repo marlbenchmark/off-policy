@@ -70,9 +70,9 @@ class HanabiRunner(RecRunner):
         episode_next_avail_acts = {}
         accumulated_rewards = {}
 
-        episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape), dtype=np.float32)
-        episode_share_obs[p_id] = np.zeros((self.episode_length, *share_obs.shape), dtype=np.float32)
-        episode_avail_acts[p_id] = np.ones((self.episode_length, *avail_acts.shape), dtype=np.float32)
+        episode_obs[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), *obs.shape[1:]), dtype=np.float32)
+        episode_share_obs[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), *share_obs.shape[1:]), dtype=np.float32)
+        episode_avail_acts[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), *avail_acts.shape[1:]), dtype=np.float32)
         episode_acts[p_id] = np.zeros((self.episode_length, *last_acts.shape), dtype=np.float32)
         episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
         episode_dones[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
@@ -82,9 +82,9 @@ class HanabiRunner(RecRunner):
         # obs, share_obs, avail_acts, action, rewards, dones, dones_env
         turn_rewards_since_last_action = np.zeros((self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
         env_acts = np.zeros_like(last_acts)
-        turn_obs = np.zeros_like(obs)
-        turn_share_obs = np.zeros_like(share_obs)
-        turn_avail_acts = np.zeros_like(avail_acts)
+        turn_obs = np.zeros((self.num_envs, len(self.policy_agents[p_id]), *obs.shape[1:]), dtype=np.float32)
+        turn_share_obs = np.zeros((self.num_envs, len(self.policy_agents[p_id]), *share_obs.shape[1:]), dtype=np.float32)
+        turn_avail_acts = np.zeros((self.num_envs, len(self.policy_agents[p_id]), *avail_acts.shape[1:]), dtype=np.float32)
         turn_acts = np.zeros_like(last_acts)
         turn_rewards = np.zeros_like(turn_rewards_since_last_action)
         turn_dones = np.zeros_like(turn_rewards_since_last_action)
@@ -95,18 +95,18 @@ class HanabiRunner(RecRunner):
             for agent_id in range(len(self.policy_agents[p_id])):
                 if warmup:
                     # completely random actions in pre-training warmup phase
-                    act = policy.get_random_actions(obs[:, agent_id], avail_acts[:, agent_id])
+                    act = policy.get_random_actions(obs, avail_acts)
                     # get new rnn hidden state
-                    _, rnn_state, _ = policy.get_actions(obs[:, agent_id],
+                    _, rnn_state, _ = policy.get_actions(obs,
                                                         last_acts[:,agent_id],
                                                         rnn_states[:,agent_id],
-                                                        avail_acts[:, agent_id])
+                                                        avail_acts)
                 else:
                     # get actions with exploration noise (eps-greedy/Gaussian)
-                    act, rnn_state, _ = policy.get_actions(obs[:, agent_id],
+                    act, rnn_state, _ = policy.get_actions(obs,
                                                             last_acts[:,agent_id],
                                                             rnn_states[:,agent_id],
-                                                            avail_acts[:,agent_id],
+                                                            avail_acts,
                                                             t_env=self.total_env_steps,
                                                             explore=explore)
                 rnn_states[:, agent_id] = rnn_state.detach()
@@ -115,17 +115,14 @@ class HanabiRunner(RecRunner):
                     act = act.cpu().detach().numpy()
                 last_acts[:, agent_id] = act
 
-                # unpack actions to format needed to step env (list of dicts, dict mapping agent_id to action)
-                env_acts[:, agent_id] = act
-
                 # [obs, share_obs, avail_acts, actions] - > current agent id
                 turn_acts[:, agent_id] = act
-                turn_obs[:, agent_id] = obs[:, agent_id].copy()
-                turn_share_obs[:, agent_id] = share_obs[:, agent_id].copy()
-                turn_avail_acts[:, agent_id] = avail_acts[:, agent_id].copy()
+                turn_obs[:, agent_id] = obs.copy()
+                turn_share_obs[:, agent_id] = share_obs.copy()
+                turn_avail_acts[:, agent_id] = avail_acts.copy()
 
                 # env step and store the relevant episode information
-                next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(env_acts)
+                next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(act)
 
                 t += 1
                 if training_episode:
@@ -146,8 +143,7 @@ class HanabiRunner(RecRunner):
 
                         # [dones] deal with current agent - > current agent id
                         current_agent_id = agent_id
-                        turn_dones[i, current_agent_id] = np.zeros(
-                            1, dtype=bool)
+                        turn_dones[i, current_agent_id] = np.zeros(1, dtype=bool)
 
                         # deal with left_agent of this turn - > left agents
                         # [obs, share obs, avail_acts, actions, rewards, dones]

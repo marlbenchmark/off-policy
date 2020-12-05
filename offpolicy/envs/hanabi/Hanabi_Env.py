@@ -289,36 +289,28 @@ class HanabiEnv(Environment):
                 self.state.deal_random_card()
 
             observation = self._make_observation_all_players()
-            observation["current_player"] = self.state.cur_player()
-            agent_turn = np.zeros(self.players).astype(np.int).tolist()
-            agent_turn[self.state.cur_player()] = 1
+            current_player = self.state.cur_player()
+            observation["current_player"] = current_player
+            player_observations = observation['player_observations']
+            
+            agent_turn = np.zeros(self.players, dtype=np.int).tolist()
+            agent_turn[current_player] = 1
 
-            obs = []
-            share_obs = []
-            available_actions = np.zeros((self.players, self.num_moves()))
-            for i in range(self.players):
-                obs.append(observation['player_observations']
-                           [i]['vectorized']+agent_turn)
-                if self.obs_instead_of_state:
-                    share_obs.append(observation['player_observations'][i]['vectorized'])
-                else:
-                    share_obs.append(observation['player_observations'][i]['vectorized_ownhand'] +
-                                 observation['player_observations'][i]['vectorized']+agent_turn)
-                available_actions[i][observation['player_observations']
-                                     [i]['legal_moves_as_int']] = 1.0
-            if self.obs_instead_of_state:               
+            available_actions = np.zeros(self.num_moves())
+            available_actions[player_observations[current_player]['legal_moves_as_int']] = 1.0
+
+            obs = player_observations[current_player]['vectorized'] + agent_turn
+            if self.obs_instead_of_state:
+                share_obs = [player_observations[i]['vectorized'] for i in range(self.players)]
                 concat_obs = np.concatenate(share_obs, axis=0)
-                concat_obs = np.concatenate((concat_obs,agent_turn), axis=0)
-                share_obs = np.expand_dims(
-                    concat_obs, 0).repeat(self.players, axis=0)
+                share_obs = np.concatenate((concat_obs, agent_turn), axis=0)
+            else:
+                share_obs = player_observations[current_player]['vectorized_ownhand'] + player_observations[current_player]['vectorized'] + agent_turn
         else:
-            obs = np.zeros(
-                (self.players, self.vectorized_observation_shape()[0]+self.players))
-            share_obs = np.zeros(
-                (self.players, self.vectorized_share_observation_shape()[0]+self.players))
-            available_actions = np.zeros((self.players, self.num_moves()))
-
-        # pick share obs of agent 0, but need to double check
+            obs = np.zeros(self.vectorized_observation_shape()[0]+self.players)
+            share_obs = np.zeros(self.vectorized_share_observation_shape()[0]+self.players)
+            available_actions = np.zeros(self.num_moves())
+        
         return obs, share_obs, available_actions
 
     def close(self):
@@ -459,7 +451,7 @@ class HanabiEnv(Environment):
         Raises:
           AssertionError: When an illegal action is provided.
         """
-        action = int(np.argmax(actions[self.state.cur_player()]))
+        action = int(np.argmax(actions))
         if isinstance(action, dict):
             # Convert dict action HanabiMove
             action = self._build_move(action)
@@ -488,26 +480,22 @@ class HanabiEnv(Environment):
             self.state.deal_random_card()
 
         observation = self._make_observation_all_players()
-        obs = []
-        share_obs = []
-        available_actions = np.zeros((self.players, self.num_moves()))
-        agent_turn = np.zeros(self.players).astype(np.int).tolist()
-        agent_turn[self.state.cur_player()] = 1
-        for i in range(self.players):
-            obs.append(observation['player_observations']
-                       [i]['vectorized'] + agent_turn)
-            if self.obs_instead_of_state:
-                share_obs.append(observation['player_observations'][i]['vectorized'])
-            else:
-                share_obs.append(observation['player_observations'][i]['vectorized_ownhand'] +
-                                observation['player_observations'][i]['vectorized']+agent_turn)                
-            available_actions[i][observation['player_observations']
-                                 [i]['legal_moves_as_int']] = 1.0
+        current_player = self.state.cur_player()
+        player_observations = observation['player_observations']
+
+        available_actions = np.zeros(self.num_moves())
+        available_actions[player_observations[current_player]['legal_moves_as_int']] = 1.0
+
+        agent_turn = np.zeros(self.players, dtype=np.int).tolist()
+        agent_turn[current_player] = 1
+
+        obs = player_observations[current_player]['vectorized'] + agent_turn
         if self.obs_instead_of_state:
+            share_obs = [player_observations[i]['vectorized'] for i in range(self.players)]
             concat_obs = np.concatenate(share_obs, axis=0)
-            concat_obs = np.concatenate((concat_obs,agent_turn), axis=0)
-            share_obs = np.expand_dims(
-                concat_obs, 0).repeat(self.players, axis=0)
+            share_obs = np.concatenate((concat_obs, agent_turn), axis=0)
+        else:
+            share_obs = player_observations[current_player]['vectorized_ownhand'] + player_observations[current_player]['vectorized'] + agent_turn
 
         done = self.state.is_terminal()
         # Reward is score differential. May be large and negative at game end.
@@ -566,9 +554,7 @@ class HanabiEnv(Environment):
             cards = [card.to_dict() for card in player_hand]
             obs_dict["observed_hands"].append(cards)
 
-        obs_dict["discard_pile"] = [
-            card.to_dict() for card in observation.discard_pile()
-        ]
+        obs_dict["discard_pile"] = [card.to_dict() for card in observation.discard_pile()]
 
         # Return hints received.
         obs_dict["card_knowledge"] = []
