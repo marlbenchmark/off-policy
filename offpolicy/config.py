@@ -7,7 +7,7 @@ def get_config():
 
     # prepare parameters
     parser.add_argument("--algorithm_name", type=str, default="rmatd3", choices=[
-                        "rmatd3", "rmaddpg", "rmasac", "rmasac-dis", "qmix", "vdn", "matd3", "maddpg", "masac", "mqmix", "mvdn"])
+                        "rmatd3", "rmaddpg", "rmasac", "qmix", "vdn", "matd3", "maddpg", "masac", "mqmix", "mvdn"])
     parser.add_argument("--experiment_name", type=str, default="check")
     parser.add_argument("--seed", type=int, default=1,
                         help="Random seed for numpy/torch")

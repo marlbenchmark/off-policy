@@ -93,10 +93,10 @@ class MPERunner(RecRunner):
             else:
                 # get actions with exploration noise (eps-greedy/Gaussian)
                 acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                        last_acts_batch,
-                                                                        rnn_states_batch,
-                                                                        t_env=self.total_env_steps,
-                                                                        explore=explore)
+                                                                    last_acts_batch,
+                                                                    rnn_states_batch,
+                                                                    t_env=self.total_env_steps,
+                                                                    explore=explore)
             # update rnn hidden state
             rnn_states_batch = rnn_states_batch.detach()
             last_acts_batch = acts_batch

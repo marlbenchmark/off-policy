@@ -166,7 +166,7 @@ def main(args):
         def policy_mapping_fn(agent_id): return 'policy_' + str(agent_id)
 
     # choose algo
-    if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac","rmasac-dis", "qmix", "vdn"]:
+    if all_args.algorithm_name in ["rmatd3", "rmaddpg", "rmasac", "qmix", "vdn"]:
         from offpolicy.runner.rnn.hns_runner import HNSRunner as Runner
         assert all_args.n_rollout_threads == 1, (
             "only support 1 env in recurrent version.")

@@ -15,13 +15,10 @@ class Actor(nn.Module):
         self._gain = args.gain
         self.hidden_size = args.hidden_size
         self.device = device
-        self.take_prev_act = take_prev_action
         self.tpdv = dict(dtype=torch.float32, device=device)
 
-        input_dim = (obs_dim + act_dim) if take_prev_action else obs_dim
-
         # map observation input into input for rnn
-        self.mlp = MLPBase(args, input_dim)
+        self.mlp = MLPBase(args, obs_dim)
 
         # get action from rnn hidden state
         self.act = ACTLayer(act_dim, self.hidden_size, self._use_orthogonal, self._gain)

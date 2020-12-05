@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn.functional as F
 import copy
 import itertools
-from offpolicy.utils.util import huber_loss, mse_loss
+from offpolicy.utils.util import huber_loss, mse_loss, check
 from offpolicy.utils.popart import PopArt
 
 class MASAC:
@@ -16,6 +16,7 @@ class MASAC:
         self.per_eps = self.args.per_eps
         self.use_huber_loss = self.args.use_huber_loss
         self.huber_delta = self.args.huber_delta
+        self.tpdv = dict(dtype=torch.float32, device=device)
 
         self.num_agents = num_agents
         self.policies = policies
@@ -25,8 +26,7 @@ class MASAC:
             [agent_id for agent_id in range(self.num_agents) if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
         if self.use_popart:
-            self.value_normalizer = {policy_id: PopArt(
-                1) for policy_id in self.policies.keys()}
+            self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
 
     def get_update_info(self, update_policy_id, obs_batch, act_batch, nobs_batch, navail_act_batch):
         cent_act = []
@@ -53,11 +53,9 @@ class MASAC:
                 combined_navail_act_batch = None
             # use target actor to get next step actions
             with torch.no_grad():
-                pol_nact, pol_nact_logprobs = policy.get_actions(
-                    combined_nobs_batch, combined_navail_act_batch, sample=True)
-                ind_agent_nacts = pol_nact.split(split_size=batch_size, dim=0)
-                ind_agent_logprobs = pol_nact_logprobs.split(
-                    split_size=batch_size, dim=0)
+                pol_nact, pol_nact_logprobs = policy.get_actions(combined_nobs_batch, combined_navail_act_batch, explore=True)
+                ind_agent_nacts = pol_nact.cpu().split(split_size=batch_size, dim=0)
+                ind_agent_logprobs = pol_nact_logprobs.split(split_size=batch_size, dim=0)
 
             if p_id == update_policy_id:
                 update_agent_logprobs = ind_agent_logprobs
@@ -68,8 +66,7 @@ class MASAC:
         cent_act = list(itertools.chain.from_iterable(cent_act))
 
         cent_nact = np.concatenate(cent_nact, axis=-1)
-        all_agent_nact_logprobs = torch.stack(update_agent_logprobs).sum(
-            dim=0) / len(self.policy_agents[update_policy_id])
+        all_agent_nact_logprobs = torch.stack(update_agent_logprobs).sum(dim=0) / len(self.policy_agents[update_policy_id])
 
         return cent_act, replace_ind_start, cent_nact, all_agent_nact_logprobs, update_agent_logprobs
 
@@ -93,35 +90,31 @@ class MASAC:
 
         # critic updates
         with torch.no_grad():
-            next_step_Q1, next_step_Q2 = update_policy.target_critic(
-                cent_nobs, cent_nact)
+            next_step_Q1, next_step_Q2 = update_policy.target_critic(cent_nobs, cent_nact)
             next_step_Q = torch.min(next_step_Q1, next_step_Q2)
 
-        rewards, dones_env = torch.from_numpy(
-            rewards).view(-1, 1), torch.from_numpy(dones_env).view(-1, 1).float()
+        rewards = check(rewards).to(**self.tpdv).view(-1, 1) 
+        dones_env = check(dones_env).to(**self.tpdv).view(-1, 1)
 
         # the expectation of V(s_t+1) is approximated with a single action sample
         if self.use_popart:
-            next_step_V = self.value_normalizer[p_id].denormalize(
-                next_step_Q) - update_policy.alpha * avg_agent_nact_logprobs
-            target_Qs = rewards + self.args.gamma * \
-                (1 - dones_env) * next_step_V
+            next_step_V = self.value_normalizer[p_id].denormalize(next_step_Q) - update_policy.alpha * avg_agent_nact_logprobs
+            target_Qs = rewards + self.args.gamma * (1 - dones_env) * next_step_V
             target_Qs = self.value_normalizer[p_id](target_Qs)
         else:
             next_step_V = next_step_Q - update_policy.alpha * avg_agent_nact_logprobs
-            target_Qs = (rewards + self.args.gamma *
-                         (1 - dones_env) * next_step_V).float()
+            target_Qs = (rewards + self.args.gamma * (1 - dones_env) * next_step_V).float()
 
-        predicted_Q1, predicted_Q2 = update_policy.critic(
-            cent_obs, np.concatenate(cent_act, axis=1))
+        predicted_Q1, predicted_Q2 = update_policy.critic(cent_obs, np.concatenate(cent_act, axis=1))
 
-        predicted_Q1 = predicted_Q1.view(-1, 1).float()
-        predicted_Q2 = predicted_Q2.view(-1, 1).float()
+        predicted_Q1 = predicted_Q1.view(-1, 1)
+        predicted_Q2 = predicted_Q2.view(-1, 1)
 
-        error_1 = (target_Qs.detach().float() - predicted_Q1)
-        error_2 = (target_Qs.detach().float() - predicted_Q2)
+        error_1 = (target_Qs.detach() - predicted_Q1)
+        error_2 = (target_Qs.detach() - predicted_Q2)
 
         if self.use_per:
+            importance_weights = check(importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).flatten()
                 critic_loss_2 = huber_loss(error_2, self.huber_delta).flatten()
@@ -129,16 +122,14 @@ class MASAC:
                 critic_loss_1 = mse_loss(error_1).flatten()
                 critic_loss_2 = mse_loss(error_2).flatten()
 
-            critic_loss_1 = (
-                critic_loss_1 * torch.FloatTensor(importance_weights)).mean()
-            critic_loss_2 = (
-                critic_loss_2 * torch.FloatTensor(importance_weights)).mean()
+            critic_loss_1 = (critic_loss_1 * importance_weights).mean()
+            critic_loss_2 = (critic_loss_2 * importance_weights).mean()
 
             critic_loss = critic_loss_1 + critic_loss_2
 
             # new priorities are TD error
-            new_priorities_1 = error_1.abs().detach().numpy().flatten()
-            new_priorities_2 = error_2.abs().detach().numpy().flatten()
+            new_priorities_1 = error_1.abs().cpu().detach().numpy().flatten()
+            new_priorities_2 = error_2.abs().cpu().detach().numpy().flatten()
 
             new_priorities = (new_priorities_1 + new_priorities_2) / 2 + self.per_eps
         else:
@@ -171,7 +162,7 @@ class MASAC:
             else:
                 sum_act_dim = self.policies[p_id].act_dim
             for a_id in self.policy_agents[p_id]:
-                mask_temp.append(np.zeros(sum_act_dim))
+                mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
         # TODO: FIX DONE MASK FROM HERE UNTIL LINE 161!
@@ -185,58 +176,49 @@ class MASAC:
                 sum_act_dim = int(sum(update_policy.act_dim))
             else:
                 sum_act_dim = update_policy.act_dim
-            curr_mask_temp[replace_ind_start + i] = np.ones(sum_act_dim)
+            curr_mask_temp[replace_ind_start + i] = np.ones(sum_act_dim, dtype=np.float32)
             curr_mask_vec = np.concatenate(curr_mask_temp)
             # expand this mask into the proper size
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
             masks.append(curr_mask)
 
             # agent dones
-            agent_done_batch = torch.from_numpy(
-                dones_batch[update_policy_id][i]).float()
+            agent_done_batch = check(dones_batch[update_policy_id][i]).to(**self.tpdv)
             done_mask.append(agent_done_batch)
         # cat to form into tensors
-        mask = torch.from_numpy(np.concatenate(masks)).float()
+        mask = check(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=0)
 
-        pol_agents_obs_batch = np.concatenate(
-            obs_batch[update_policy_id], axis=0).astype(np.float32)
+        pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
         if avail_act_batch[update_policy_id] is not None:
-            pol_agents_avail_act_batch = np.concatenate(
-                avail_act_batch[update_policy_id], axis=0).astype(np.float32)
+            pol_agents_avail_act_batch = np.concatenate(avail_act_batch[update_policy_id], axis=0)
         else:
             pol_agents_avail_act_batch = None
         # get all actions from actor
-        pol_acts, pol_logprobs = update_policy.get_actions(
-            pol_agents_obs_batch, pol_agents_avail_act_batch, sample=True, sample_gumbel=True)
+        pol_acts, pol_logprobs = update_policy.get_actions(pol_agents_obs_batch, pol_agents_avail_act_batch, use_gumbel=True)
         # separate into individual agent batches
         agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
         agent_actor_logprobs = pol_logprobs.split(split_size=batch_size, dim=0)
 
-        cent_act = list(
-            map(lambda arr: torch.from_numpy(arr).float(), cent_act))
+        cent_act = list(map(lambda arr: check(arr).to(**self.tpdv), cent_act))
         actor_cent_acts = copy.deepcopy(cent_act)
         for i in range(num_update_agents):
             actor_cent_acts[replace_ind_start + i] = agent_actor_batches[i]
 
-        actor_cent_acts = torch.cat(
-            actor_cent_acts, dim=-1).repeat((num_update_agents, 1)).float()
+        actor_cent_acts = torch.cat(actor_cent_acts, dim=-1).repeat((num_update_agents, 1))
         # convert buffer acts to torch, formulate centralized buffer action and repeat as done above
-        buffer_cent_acts = torch.cat(
-            cent_act, dim=-1).repeat(num_update_agents, 1).float()
+        buffer_cent_acts = torch.cat(cent_act, dim=-1).repeat(num_update_agents, 1)
 
         # also repeat cent obs
-        stacked_cent_obs = np.tile(cent_obs, (num_update_agents, 1)).astype(np.float32)
+        stacked_cent_obs = np.tile(cent_obs, (num_update_agents, 1))
         # combine the buffer cent acts with actor cent acts and pass into buffer
         actor_update_cent_acts = mask * actor_cent_acts + (1 - mask) * buffer_cent_acts
 
         actor_Q1, actor_Q2 = update_policy.critic(stacked_cent_obs, actor_update_cent_acts)
         actor_Q = torch.min(actor_Q1, actor_Q2)
-        actor_loss_unmeaned = update_policy.alpha * pol_logprobs - actor_Q
+        actor_loss = update_policy.alpha * pol_logprobs - actor_Q
         # TODO: mask loss
-        #actor_loss = actor_loss_unmeaned.mean()
-        actor_loss_unmeaned = actor_loss_unmeaned * (1 - done_mask)
-        actor_loss = actor_loss_unmeaned.sum() / (1 - done_mask).sum()
+        actor_loss = (actor_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
 
         update_policy.actor_optimizer.zero_grad()
         update_policy.critic_optimizer.zero_grad()
@@ -248,15 +230,15 @@ class MASAC:
         if self.args.automatic_entropy_tune:
             # double check this loss calculation
             if isinstance(update_policy.target_entropy, np.ndarray):
-                update_policy.target_entropy = torch.FloatTensor(update_policy.target_entropy)
-            ent_diff_mean = (pol_logprobs + update_policy.target_entropy).mean()
-            alpha_loss = -(update_policy.log_alpha * (pol_logprobs + update_policy.target_entropy).detach())
+                update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
+            
+            entropy = (pol_logprobs + update_policy.target_entropy).mean()
+            alpha_loss = -(update_policy.log_alpha.to(**self.tpdv) * (pol_logprobs + update_policy.target_entropy).detach())
 
             if alpha_loss.shape[-1] > 1:
                 alpha_loss = alpha_loss.mean(dim=-1).unsqueeze(-1)
 
-            alpha_loss = alpha_loss * (1 - done_mask)
-            alpha_loss = alpha_loss.sum() / (1 - done_mask).sum()
+            alpha_loss = (alpha_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
 
             update_policy.alpha_optimizer.zero_grad()
             alpha_loss.backward()
@@ -265,7 +247,7 @@ class MASAC:
             # sync log_alpha and alpha since gradient updates are made to log_alpha
             update_policy.alpha = update_policy.log_alpha.exp().detach()
         else:
-            ent_diff_mean = torch.scalar_tensor(0.0)
+            entropy = torch.scalar_tensor(0.0)
             alpha_loss = torch.scalar_tensor(0.0)
 
         for p in update_policy.critic.parameters():
@@ -278,7 +260,7 @@ class MASAC:
         train_info['critic_grad_norm'] = critic_grad_norm
         train_info['actor_grad_norm'] = actor_grad_norm
         train_info['alpha'] = update_policy.alpha
-        train_info['entropy'] = ent_diff_mean
+        train_info['entropy'] = entropy
 
         return train_info, new_priorities, idxes
 
@@ -303,55 +285,45 @@ class MASAC:
 
         num_update_agents = len(self.policy_agents[update_policy_id])
 
-        all_agent_cent_obs = np.concatenate(
-            cent_obs, axis=0).astype(np.float32)
-        all_agent_cent_nobs = np.concatenate(
-            cent_nobs, axis=0).astype(np.float32)
+        all_agent_cent_obs = np.concatenate(cent_obs, axis=0)
+        all_agent_cent_nobs = np.concatenate(cent_nobs, axis=0)
         # since this is the same for each agent, just repeat when stacking
-        cent_act_buffer = np.concatenate(cent_act, axis=-1).astype(np.float32)
-        all_agent_cent_act_buffer = np.tile(
-            cent_act_buffer, (num_update_agents, 1)).astype(np.float32)
-        all_agent_cent_nact = np.tile(
-            cent_nact, (num_update_agents, 1)).astype(np.float32)
-        all_env_dones = np.tile(
-            dones_env, (num_update_agents, 1)).astype(np.float32)
-        all_agent_rewards = np.tile(
-            rewards, (num_update_agents, 1)).astype(np.float32)
-        all_agent_nact_logprobs = np.concatenate(update_agent_logprobs, axis=0)
+        cent_act_buffer = np.concatenate(cent_act, axis=-1)
+        all_agent_cent_act_buffer = np.tile(cent_act_buffer, (num_update_agents, 1))
+        all_agent_cent_nact = np.tile(cent_nact, (num_update_agents, 1))
+        all_env_dones = np.tile(dones_env, (num_update_agents, 1))
+        all_agent_rewards = np.tile(rewards, (num_update_agents, 1))
+        all_agent_nact_logprobs = torch.cat(update_agent_logprobs, axis=0)
 
         # critic update
-        all_agent_rewards = torch.from_numpy(all_agent_rewards).view(-1, 1)
-        all_env_dones = torch.from_numpy(all_env_dones).view(-1, 1).float()
-        all_agent_dones = torch.from_numpy(dones).view(-1, 1).float()
+        all_agent_rewards = check(all_agent_rewards).to(**self.tpdv).reshape(-1, 1)
+        all_env_dones = check(all_env_dones).to(**self.tpdv).reshape(-1, 1)
+        all_agent_dones = check(dones).to(**self.tpdv).reshape(-1, 1)
 
         with torch.no_grad():
-            next_step_Q1, next_step_Q2 = update_policy.target_critic(
-                all_agent_cent_nobs, all_agent_cent_nact)
+            next_step_Q1, next_step_Q2 = update_policy.target_critic(all_agent_cent_nobs, all_agent_cent_nact)
             next_step_Q = torch.min(next_step_Q1, next_step_Q2)
 
             if self.use_popart:
-                next_step_V = self.value_normalizer[p_id].denormalize(
-                    next_step_Q) - update_policy.alpha * all_agent_nact_logprobs
-                target_Qs = all_agent_rewards + self.args.gamma * \
-                    (1 - all_env_dones) * next_step_V
+                next_step_V = self.value_normalizer[p_id].denormalize(next_step_Q) - update_policy.alpha * all_agent_nact_logprobs
+                target_Qs = all_agent_rewards + self.args.gamma * (1 - all_env_dones) * next_step_V
                 target_Qs = self.value_normalizer[p_id](target_Qs)
             else:
                 next_step_V = next_step_Q - update_policy.alpha * all_agent_nact_logprobs
-                target_Qs = all_agent_rewards + self.args.gamma * \
-                    (1 - all_env_dones) * next_step_V
+                target_Qs = all_agent_rewards + self.args.gamma * (1 - all_env_dones) * next_step_V
 
         predicted_Q1, predicted_Q2 = update_policy.critic(
             all_agent_cent_obs, all_agent_cent_act_buffer)
 
-        predicted_Q1 = predicted_Q1.view(-1, 1).float()
-        predicted_Q2 = predicted_Q2.view(-1, 1).float()
+        predicted_Q1 = predicted_Q1.view(-1, 1)
+        predicted_Q2 = predicted_Q2.view(-1, 1)
 
-        error_1 = target_Qs.detach().float() - predicted_Q1
-        error_2 = target_Qs.detach().float() - predicted_Q2
+        error_1 = target_Qs.detach() - predicted_Q1
+        error_2 = target_Qs.detach() - predicted_Q2
 
         if self.use_per:
-            agent_importance_weights = np.tile(
-                importance_weights, num_update_agents)
+            agent_importance_weights = np.tile(importance_weights, num_update_agents)
+            agent_importance_weights = check(agent_importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).flatten()
                 critic_loss_2 = huber_loss(error_2, self.huber_delta).flatten()
@@ -359,16 +331,12 @@ class MASAC:
                 critic_loss_1 = mse_loss(error_1).flatten()
                 critic_loss_2 = mse_loss(error_2).flatten()
 
-            critic_loss_1 = critic_loss_1 * \
-                torch.FloatTensor(agent_importance_weights)
-            critic_loss_2 = critic_loss_2 * \
-                torch.FloatTensor(agent_importance_weights)
+            critic_loss_1 = critic_loss_1 * agent_importance_weights
+            critic_loss_2 = critic_loss_2 * agent_importance_weights
 
             if self.use_value_active_masks:
-                critic_loss_1 = (critic_loss_1.view(-1, 1) * (1 -
-                                                              all_agent_dones)).sum() / (1 - all_agent_dones).sum()
-                critic_loss_2 = (critic_loss_2.view(-1, 1) * (1 -
-                                                              all_agent_dones)).sum() / (1 - all_agent_dones).sum()
+                critic_loss_1 = (critic_loss_1.view(-1, 1) * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
+                critic_loss_2 = (critic_loss_2.view(-1, 1) * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
             else:
                 critic_loss_1 = critic_loss_1.mean()
                 critic_loss_2 = critic_loss_2.mean()
@@ -376,12 +344,10 @@ class MASAC:
             critic_loss = critic_loss_1 + critic_loss_2
 
             # new priorities are TD error
-            agent_new_priorities_1 = error_1.abs().detach().numpy().flatten()
-            agent_new_priorities_2 = error_2.abs().detach().numpy().flatten()
-            agent_new_priorities = (
-                agent_new_priorities_1 + agent_new_priorities_2) / 2
-            new_priorities = np.mean(
-                np.split(agent_new_priorities, num_update_agents), axis=0) + self.per_eps
+            agent_new_priorities_1 = error_1.abs().cpu().detach().numpy().flatten()
+            agent_new_priorities_2 = error_2.abs().cpu().detach().numpy().flatten()
+            agent_new_priorities = (agent_new_priorities_1 + agent_new_priorities_2) / 2
+            new_priorities = np.mean(np.split(agent_new_priorities, num_update_agents), axis=0) + self.per_eps
         else:
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta)
@@ -391,10 +357,8 @@ class MASAC:
                 critic_loss_2 = mse_loss(error_2)
 
             if self.use_value_active_masks:
-                critic_loss_1 = (critic_loss_1 * (1 - all_agent_dones)
-                                 ).sum() / (1 - all_agent_dones).sum()
-                critic_loss_2 = (critic_loss_2 * (1 - all_agent_dones)
-                                 ).sum() / (1 - all_agent_dones).sum()
+                critic_loss_1 = (critic_loss_1 * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
+                critic_loss_2 = (critic_loss_2 * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
             else:
                 critic_loss_1 = critic_loss_1.mean()
                 critic_loss_2 = critic_loss_2.mean()
@@ -422,7 +386,7 @@ class MASAC:
             else:
                 sum_act_dim = self.policies[p_id].act_dim
             for a_id in self.policy_agents[p_id]:
-                mask_temp.append(np.zeros(sum_act_dim))
+                mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
         # TODO: FIX DONE MASK FROM HERE UNTIL LINE 161!
@@ -436,53 +400,44 @@ class MASAC:
                 sum_act_dim = int(sum(update_policy.act_dim))
             else:
                 sum_act_dim = update_policy.act_dim
-            curr_mask_temp[replace_ind_start + i] = np.ones(sum_act_dim)
+            curr_mask_temp[replace_ind_start + i] = np.ones(sum_act_dim, dtype=np.float32)
             curr_mask_vec = np.concatenate(curr_mask_temp)
             # expand this mask into the proper size
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
             masks.append(curr_mask)
 
             # agent dones
-            agent_done_batch = torch.from_numpy(
-                dones_batch[update_policy_id][i]).float()
+            agent_done_batch = check(dones_batch[update_policy_id][i]).to(**self.tpdv)
             done_mask.append(agent_done_batch)
         # cat to form into tensors
-        mask = torch.from_numpy(np.concatenate(masks)).float()
+        mask = check(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=0)
 
-        pol_agents_obs_batch = np.concatenate(
-            obs_batch[update_policy_id], axis=0).astype(np.float32)
-        if pol_agents_avail_act_batch is not None:
-            pol_agents_avail_act_batch = np.concatenate(avail_actions_batch[update_policy_id], axis=0).astype(
-                np.float32)
+        pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
+        if avail_act_batch[update_policy_id] is not None:
+            pol_agents_avail_act_batch = np.concatenate(avail_act_batch[update_policy_id], axis=0)
         else:
             pol_agents_avail_act_batch = None
         # get all actions from actor
-        pol_acts, pol_logprobs = update_policy.get_actions(
-            pol_agents_obs_batch, pol_agents_avail_act_batch, sample=True, sample_gumbel=True)
+        pol_acts, pol_logprobs = update_policy.get_actions(pol_agents_obs_batch, pol_agents_avail_act_batch, use_gumbel=True)
         # separate into individual agent batches
         agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
         agent_actor_logprobs = pol_logprobs.split(split_size=batch_size, dim=0)
 
-        cent_act = list(map(lambda arr: torch.FloatTensor(arr), cent_act))
+        cent_act = list(map(lambda arr: check(arr).to(**self.tpdv), cent_act))
         # cat along final dim to formulate centralized action and stack copies of the batch
         actor_cent_acts = copy.deepcopy(cent_act)
         for i in range(num_update_agents):
             actor_cent_acts[replace_ind_start + i] = agent_actor_batches[i]
 
-        actor_cent_acts = torch.cat(
-            actor_cent_acts, dim=-1).repeat((num_update_agents, 1)).float()
+        actor_cent_acts = torch.cat(actor_cent_acts, dim=-1).repeat((num_update_agents, 1))
 
-        actor_update_cent_acts = mask * actor_cent_acts * \
-            (1 - mask) * torch.FloatTensor(all_agent_cent_act_buffer)
-        pol_Q1, pol_Q2 = update_policy.critic(
-            all_agent_cent_obs, actor_update_cent_acts)
+        actor_update_cent_acts = mask * actor_cent_acts * (1 - mask) * check(all_agent_cent_act_buffer).to(**self.tpdv)
+        pol_Q1, pol_Q2 = update_policy.critic(all_agent_cent_obs, actor_update_cent_acts)
         pol_Q = torch.min(pol_Q1, pol_Q2)
-        actor_loss_unmeaned = update_policy.alpha * pol_logprobs - pol_Q
+        actor_loss = update_policy.alpha * pol_logprobs - pol_Q
         # TODO: include mask here
-        #actor_loss = actor_loss_unmeaned.mean()
-        actor_loss_unmeaned = actor_loss_unmeaned * (1 - done_mask)
-        actor_loss = actor_loss_unmeaned.sum() / (1 - done_mask).sum()
+        actor_loss = (actor_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
 
         update_policy.actor_optimizer.zero_grad()
         update_policy.critic_optimizer.zero_grad()
@@ -494,12 +449,11 @@ class MASAC:
         # entropy temperature update
         if self.args.automatic_entropy_tune:
             if isinstance(update_policy.target_entropy, np.ndarray):
-                update_policy.target_entropy = torch.FloatTensor(
-                    update_policy.target_entropy)
+                update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
+            
             # double check this loss calculation
-            ent_diff_mean = (
-                pol_logprobs + update_policy.target_entropy).mean()
-            alpha_loss = -(update_policy.log_alpha *
+            entropy = (pol_logprobs + update_policy.target_entropy).mean()
+            alpha_loss = -(update_policy.log_alpha.to(**self.tpdv) *
                            (pol_logprobs + update_policy.target_entropy).detach())
 
             if alpha_loss.shape[-1] > 1:
@@ -515,7 +469,7 @@ class MASAC:
             # sync log_alpha and alpha since gradient updates are made to log_alpha
             update_policy.alpha = update_policy.log_alpha.exp().detach()
         else:
-            ent_diff_mean = torch.scalar_tensor(0.0)
+            entropy = torch.scalar_tensor(0.0)
             alpha_loss = torch.scalar_tensor(0.0)
 
         for p in update_policy.critic.parameters():
@@ -528,7 +482,7 @@ class MASAC:
         train_info['critic_grad_norm'] = critic_grad_norm
         train_info['actor_grad_norm'] = actor_grad_norm
         train_info['alpha'] = update_policy.alpha
-        train_info['entropy'] = ent_diff_mean
+        train_info['entropy'] = entropy
 
         return train_info, new_priorities, idxes
 

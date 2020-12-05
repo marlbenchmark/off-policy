@@ -120,11 +120,6 @@ class RecRunner(object):
                 "rmasac only support actor_train_interval_step=1.")
             from offpolicy.algorithms.r_masac.algorithm.rMASACPolicy import R_MASACPolicy as Policy
             from offpolicy.algorithms.r_masac.r_masac import R_MASAC as TrainAlgo
-        elif self.algorithm_name == "rmasac-dis":
-            assert self.actor_train_interval_step == 1, (
-                "rmasac only support actor_train_interval_step=1.")
-            from offpolicy.algorithms.r_masac_discrete.algorithm.rMASACPolicy import R_MASACPolicy as Policy
-            from offpolicy.algorithms.r_masac_discrete.r_masac import R_MASAC as TrainAlgo
         elif self.algorithm_name == "qmix":
             from offpolicy.algorithms.qmix.algorithm.QMixPolicy import QMixPolicy as Policy
             from offpolicy.algorithms.qmix.qmix import QMix as TrainAlgo

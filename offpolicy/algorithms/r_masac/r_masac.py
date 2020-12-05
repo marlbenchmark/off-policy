@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import copy
 import itertools
-from offpolicy.utils.util import huber_loss, mse_loss
+from offpolicy.utils.util import huber_loss, mse_loss, check
 from offpolicy.utils.popart import PopArt
 
 class R_MASAC:
@@ -65,7 +65,7 @@ class R_MASAC:
                     sum_act_dim = int(sum(policy.act_dim))
                 else:
                     sum_act_dim = policy.act_dim
-                _, _, new_target_rnns = policy.get_actions(first_obs, 
+                _, new_target_rnns,_ = policy.get_actions(first_obs, 
                                                            np.zeros((total_batch_size, sum_act_dim), dtype=np.float32),
                                                            policy.init_hidden(-1, total_batch_size),
                                                            available_actions=first_avail_act)
@@ -85,7 +85,7 @@ class R_MASAC:
                                                                          explore=True)
                 # separate the actions into individual agent actions
                 ind_agent_nact_seqs = pol_nact_seq.cpu().split(split_size=batch_size, dim=1)
-                ind_agent_nact_log_probs = pol_nact_log_probs.cpu().split(split_size=batch_size, dim=1)
+                ind_agent_nact_log_probs = pol_nact_log_probs.split(split_size=batch_size, dim=1)
 
             if p_id == update_policy_id:
                 update_policy_nact_log_probs = ind_agent_nact_log_probs
@@ -131,6 +131,8 @@ class R_MASAC:
         cent_act_sequence_buffer, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence, all_agent_nact_log_prob_seq, _ = \
             self.get_update_info(update_policy_id, obs_batch, act_batch,
                                  nobs_batch, avail_act_batch, navail_act_batch)
+
+        all_agent_nact_log_prob_seq = all_agent_nact_log_prob_seq.to(**self.tpdv)
 
         # get sequence of Q value predictions, with the buffer sequence as input: results are tensors of shape (ep len, batch size, 1 (if continuous actions) or a_dim (if discrete)))
         predicted_Q1_sequence, predicted_Q2_sequence, _ = update_policy.critic(cent_obs_sequence,
@@ -280,7 +282,7 @@ class R_MASAC:
         else:
             pol_agents_avail_act_seq = None
         # get all the actions from actor, with gumbel softmax to differentiate through the samples
-        policy_act_seq, policy_log_prob_seq, _ = update_policy.get_actions(pol_agents_obs_seq,
+        policy_act_seq, _, policy_log_prob_seq = update_policy.get_actions(pol_agents_obs_seq,
                                                                            pol_prev_buffer_act_seq,
                                                                            update_policy.init_hidden(-1, total_batch_size),
                                                                            available_actions=pol_agents_avail_act_seq,
@@ -337,7 +339,7 @@ class R_MASAC:
             if isinstance(update_policy.target_entropy, np.ndarray):
                 update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
 
-            alpha_loss_sequence = -(update_policy.log_alpha * (policy_log_prob_seq + update_policy.target_entropy).detach())
+            alpha_loss_sequence = -(update_policy.log_alpha.to(**self.tpdv) * (policy_log_prob_seq + update_policy.target_entropy).detach())
 
             if alpha_loss_sequence.shape[-1] > 1:
                 alpha_loss_sequence = alpha_loss_sequence.mean(dim=-1).unsqueeze(-1)
@@ -444,7 +446,7 @@ class R_MASAC:
         target_Q_sequence = target_Q_sequence * (1 - curr_env_dones)
 
         if self.use_value_active_masks:
-            curr_agent_dones = check(all_agent_dones).to(self.tpdv)
+            curr_agent_dones = check(all_agent_dones).to(**self.tpdv)
             predicted_Q1_sequence = predicted_Q1_sequence * (1 - curr_agent_dones)
             predicted_Q2_sequence = predicted_Q2_sequence * (1 - curr_agent_dones)
             target_Q_sequence = target_Q_sequence * (1 - curr_agent_dones)
@@ -574,11 +576,11 @@ class R_MASAC:
         else:
             pol_agents_avail_act_seq = None
         # get all the actions from actor, with gumbel softmax to differentiate through the samples
-        policy_act_seq, policy_log_prob_seq ,_ = update_policy.get_actions(pol_agents_obs_seq,
+        policy_act_seq, _, policy_log_prob_seq = update_policy.get_actions(pol_agents_obs_seq,
                                                                            pol_prev_buffer_act_seq,
                                                                            update_policy.init_hidden(-1, total_batch_size),
                                                                            available_actions=pol_agents_avail_act_seq,
-                                                                           explore=True)
+                                                                           use_gumbel=True)
 
         # separate the output into individual agent act sequences
         agent_actor_seqs = policy_act_seq.split(split_size=batch_size, dim=1)
@@ -624,10 +626,9 @@ class R_MASAC:
 
         if self.args.automatic_entropy_tune:
             # TODO @Akash double check this, is it right for multi-discrete action
-            if isinstance(update_policy.target_entropy, np.ndarray):
-                update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
+            update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
             # entropy temperature update
-            alpha_loss_sequence = -(update_policy.log_alpha * (policy_log_prob_seq + update_policy.target_entropy).detach())
+            alpha_loss_sequence = -(update_policy.log_alpha.to(**self.tpdv) * (policy_log_prob_seq + update_policy.target_entropy).detach())
 
             if alpha_loss_sequence.shape[-1] > 1:
                 alpha_loss_sequence = alpha_loss_sequence.mean(dim=-1).unsqueeze(-1)
