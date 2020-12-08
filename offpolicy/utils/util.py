@@ -161,12 +161,12 @@ def onehot_from_logits(logits, avail_logits=None, eps=0.0):
     """
     # get best (according to current policy) actions in one-hot form
     logits = check(logits)
-    avail_logits = check(avail_logits)
-
+    
     dim = len(logits.shape) - 1
-    logits_clone = logits.clone()
-    logits_clone[avail_logits == 0] = -1e10
-    argmax_acs = (logits_clone == logits_clone.max(dim, keepdim=True)[0]).float()
+    if avail_logits is not None:
+        avail_logits = check(avail_logits)
+        logits[avail_logits == 0] = -1e10
+    argmax_acs = (logits == logits.max(dim, keepdim=True)[0]).float()
     if eps == 0.0:
         return argmax_acs
     # get random actions in one-hot form
@@ -182,7 +182,7 @@ def sample_gumbel(shape, eps=1e-20, tens_type=torch.FloatTensor):
     return -torch.log(-torch.log(U + eps) + eps)
 
 # modified for PyTorch from https://github.com/ericjang/gumbel-softmax/blob/master/Categorical%20VAE.ipynb
-def gumbel_softmax_sample(logits, temperature, device='cpu'):
+def gumbel_softmax_sample(logits, avail_logits, temperature, device='cpu'):
     """ Draw a sample from the Gumbel-Softmax distribution"""
     if device == 'cpu':
         y = logits + sample_gumbel(logits.shape, tens_type=type(logits.data))
@@ -191,6 +191,8 @@ def gumbel_softmax_sample(logits, temperature, device='cpu'):
                                           tens_type=type(logits.data))).cuda()
 
     dim = len(logits.shape) - 1
+    avail_logits = check(avail_logits).to(device)
+    y[avail_logits==0] = -1e10
     return F.softmax(y / temperature, dim=dim)
 
 # modified for PyTorch from https://github.com/ericjang/gumbel-softmax/blob/master/Categorical%20VAE.ipynb
@@ -205,9 +207,9 @@ def gumbel_softmax(logits, avail_logits=None, temperature=1.0, hard=False, devic
       If hard=True, then the returned sample will be one-hot, otherwise it will
       be a probabilitiy distribution that sums to 1 across classes
     """
-    y = gumbel_softmax_sample(logits, temperature, device)
+    y = gumbel_softmax_sample(logits, avail_logits, temperature, device)
     if hard:
-        y_hard = onehot_from_logits(y, avail_logits)
+        y_hard = onehot_from_logits(y)
         y = (y_hard - y).detach() + y
     return y
 
