@@ -143,23 +143,28 @@ class HanabiRunner(RecRunner):
 
                         # [dones] deal with current agent - > current agent id
                         current_agent_id = agent_id
-                        turn_dones[i, current_agent_id] = np.zeros(1, dtype=bool)
+                        turn_dones[i, current_agent_id] = False
 
                         # deal with left_agent of this turn - > left agents
                         # [obs, share obs, avail_acts, actions, rewards, dones]
-                        for left_agent_id in self.agent_ids:
-                            if left_agent_id > current_agent_id:
-                                # [rewards]   must use the right value
-                                turn_rewards[i, left_agent_id] = turn_rewards_since_last_action[i, left_agent_id].copy()
-                                turn_rewards_since_last_action[i,left_agent_id] = 0.0
-                                # [dones]
-                                turn_dones[i, left_agent_id] = np.ones(1, dtype=bool)
+                        left_agent_id = current_agent_id + 1
+                        
+                        # [rewards]   must use the right value
+                        turn_rewards[i, left_agent_id:] = turn_rewards_since_last_action[i, left_agent_id:].copy()
+                        turn_rewards_since_last_action[i, left_agent_id:] = 0.0
+                        
+                        # [dones]
+                        turn_dones[i, left_agent_id:] = True
 
-                                # [obs, share_obs, avail_acts, actions]
-                                turn_acts[i, left_agent_id] = np.zeros(policy.act_dim)
-                                turn_obs[i, left_agent_id] = np.zeros(policy.obs_dim)
-                                turn_share_obs[i, left_agent_id] = np.zeros(policy.central_obs_dim)
-                                turn_avail_acts[i, left_agent_id] = np.ones(policy.act_dim)
+                        # [obs, share_obs, avail_acts, actions]
+                        turn_acts[i, left_agent_id] = 0.0
+                        turn_obs[i, left_agent_id] = 0.0
+                        turn_share_obs[i, left_agent_id] = 0.0
+                        turn_avail_acts[i, left_agent_id] = 1.0
+
+                        # deal with previous agents of this turn -> previous agents
+                        turn_rewards[i, 0:current_agent_id] += turn_rewards_since_last_action[i, 0:current_agent_id].copy()
+                        turn_rewards_since_last_action[i, 0:current_agent_id] = 0.0
 
                         if 'score' in infos[i].keys():
                             env_info['average_score'] = infos[i]['score']
