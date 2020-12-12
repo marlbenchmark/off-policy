@@ -179,7 +179,7 @@ class RecRunner(object):
     def run(self):
         # collect data
         self.trainer.prep_rollout()
-        env_info = self.collecter(explore=True, training_episode=True, warmup=False)
+        env_info = self.collecter(explore=True, training_episode=True, warmup=True)
         for k, v in env_info.items():
             self.env_infos[k].append(v)
 

@@ -16,8 +16,17 @@ class SMACRunner(RecRunner):
         super(SMACRunner, self).__init__(config)
         # fill replay buffer with random actions
         num_warmup_episodes = max((self.batch_size, self.args.num_random_episodes))
-        self.warmup(num_warmup_episodes)
         self.start = time.time()
+        self.warmup(num_warmup_episodes)
+        end = time.time()
+        print("\n Env {} Map {} Algo {} Exp {} runs total num timesteps {}/{}, FPS {}. \n"
+              .format(self.env_name,
+                      self.args.map_name,
+                      self.algorithm_name,
+                      self.args.experiment_name,
+                      self.total_env_steps,
+                      self.num_env_steps,
+                      int(self.total_env_steps / (end - self.start))))
         self.log_clear()
     
     def eval(self):
@@ -111,7 +120,7 @@ class SMACRunner(RecRunner):
             # env step and store the relevant episode information
             next_obs, next_share_obs, rewards, dones, infos, next_avail_acts = env.step(env_acts)
             t += 1
-            if training_episode:
+            if training_episode or warmup:
                 self.total_env_steps += self.num_envs
 
             dones_env = np.all(dones, axis=1)
