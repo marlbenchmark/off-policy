@@ -10,14 +10,19 @@ from offpolicy.utils.rec_buffer import RecReplayBuffer, PrioritizedRecReplayBuff
 from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
 
 class RecRunner(object):
+    """Base class for training recurrent policies."""
 
     def __init__(self, config):
-        # non-tunable hyperparameters are in args
+        """
+        Initialize runner class.
+
+        :param config: (dict) Config dictionary containing parameters for training.
+        """
+
         self.args = config["args"]
         self.device = config["device"]
         self.q_learning = ["qmix","vdn"]
 
-        # set tunable hyperparameters
         self.share_policy = self.args.share_policy
         self.algorithm_name = self.args.algorithm_name
         self.env_name = self.args.env_name
@@ -45,13 +50,11 @@ class RecRunner(object):
         self.total_env_steps = 0  # total environment interactions collected during training
         self.num_episodes_collected = 0  # total episodes collected during training
         self.total_train_steps = 0  # number of gradient updates performed
-        # last episode after which a gradient update was performed
-        self.last_train_episode = 0
-        self.last_train_T = 0
+        self.last_train_episode = 0  # last episode after which a gradient update was performed
         self.last_eval_T = 0  # last episode after which a eval run was conducted
         self.last_save_T = 0  # last epsiode after which the models were saved
-        self.last_log_T = 0
-        self.last_hard_update_episode = 0
+        self.last_log_T = 0 # last timestep after which information was logged
+        self.last_hard_update_episode = 0 # last episode after which target policy was updated to equal live policy
 
         if config.__contains__("take_turn"):
             self.take_turn = config["take_turn"]
@@ -112,7 +115,7 @@ class RecRunner(object):
             from offpolicy.algorithms.r_matd3.r_matd3 import R_MATD3 as TrainAlgo
         elif self.algorithm_name == "rmaddpg":
             assert self.actor_train_interval_step == 1, (
-                "rmaddpg only support actor_train_interval_step=1.")
+                "rmaddpg only supports actor_train_interval_step=1.")
             from offpolicy.algorithms.r_maddpg.algorithm.rMADDPGPolicy import R_MADDPGPolicy as Policy
             from offpolicy.algorithms.r_maddpg.r_maddpg import R_MADDPG as TrainAlgo
         elif self.algorithm_name == "rmasac":
@@ -139,10 +142,11 @@ class RecRunner(object):
         if self.model_dir is not None:
             self.restorer()
 
-        # initialize rmaddpg class for updating policies
+        # initialize trainer class for updating policies
         self.trainer = TrainAlgo(self.args, self.num_agents, self.policies, self.policy_mapping_fn,
                                  device=self.device, episode_length=self.episode_length)
 
+        # map policy id to agent ids controlled by that policy
         self.policy_agents = {policy_id: sorted(
             [agent_id for agent_id in self.agent_ids if self.policy_mapping_fn(agent_id) == policy_id]) for policy_id in
             self.policies.keys()}
@@ -177,6 +181,8 @@ class RecRunner(object):
                                           self.use_reward_normalization)
     
     def run(self):
+        """Collect a training episode and perform training, saving, logging, and evaluation steps."""
+
         # collect data
         self.trainer.prep_rollout()
         env_info = self.collecter(explore=True, training_episode=True, warmup=True)
@@ -207,7 +213,11 @@ class RecRunner(object):
         return self.total_env_steps
     
     def warmup(self, num_warmup_episodes):
-        # fill replay buffer with enough episodes to begin training
+        """
+        fill replay buffer with enough episodes to begin training.
+
+        :param: num_warmup_episodes (int): number of warmup episodes to collect.
+        """
         self.trainer.prep_rollout()
         warmup_rewards = []
         print("warm up...")
@@ -218,8 +228,9 @@ class RecRunner(object):
         print("warmup average episode rewards: {}".format(warmup_reward))
 
     def batch_train(self):
+        """Do a gradient update for the policy."""
         self.trainer.prep_training()
-        # do a gradient update if the number of episodes collected since the last training update exceeds the specified amount
+        # update actor if the number of episodes collected since the last training update exceeds the specified amount
         update_actor = ((self.total_train_steps %
                          self.actor_train_interval_step) == 0)
         # gradient updates
@@ -231,9 +242,9 @@ class RecRunner(object):
             else:
                 sample = self.buffer.sample(self.batch_size)
 
-            update = self.trainer.shared_train_policy_on_batch if self.use_same_share_obs else self.trainer.cent_train_policy_on_batch
+            update_method = self.trainer.shared_train_policy_on_batch if self.use_same_share_obs else self.trainer.cent_train_policy_on_batch
             
-            train_info, new_priorities, idxes = update(p_id, sample, update_actor)
+            train_info, new_priorities, idxes = update_method(p_id, sample, update_actor)
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)
@@ -250,6 +261,7 @@ class RecRunner(object):
                 self.last_hard_update_episode = self.num_episodes_collected
 
     def batch_train_q(self):
+        """Do a q-learning update to policy (used for QMix and VDN)."""
         self.trainer.prep_training()
         update_popart = ((self.total_train_steps % self.popart_update_interval_step) == 0)
         # gradient updates
