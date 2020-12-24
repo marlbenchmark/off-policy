@@ -12,9 +12,11 @@ from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSch
 from offpolicy.runner.rnn.base_runner import RecRunner
 
 class MPERunner(RecRunner):
+    """Runner class for Multiagent Particle Envs (MPE). See parent class for more info."""
     def __init__(self, config):
         super(MPERunner, self).__init__(config)
         self.collecter = self.shared_collect_rollout if self.share_policy else self.separated_collect_rollout
+        # fill replay buffer with random actions
         # fill replay buffer with random actions
         num_warmup_episodes = max((self.batch_size, self.args.num_random_episodes))
         self.warmup(num_warmup_episodes)
@@ -36,7 +38,15 @@ class MPERunner(RecRunner):
     # for mpe-simple_spread and mpe-simple_reference  
     @torch.no_grad() 
     def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout in which all agents share the same policy weights. Used for the simple-spread and simple-reference envs.
+
+        :param explore: (bool) whether to use an exploration policy for rollout collection.
+        :param training_episode (bool) whether this episode contributes to the total number of training steps
+        :param warmup (bool): whether to collect episode with purely random actions
+        """
         env_info = {}
+        # only 1 policy since all agents share weights
         p_id = "policy_0"
         policy = self.policies[p_id]
 
@@ -53,7 +63,7 @@ class MPERunner(RecRunner):
 
         last_acts_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
 
-        # init
+        # initialize variables to store episode information.
         episode_obs = {}
         episode_share_obs = {}
         episode_acts = {}
@@ -81,6 +91,7 @@ class MPERunner(RecRunner):
         t = 0
         episode_step = 0
         while t < self.episode_length:
+            # group observations from parallel envs into one batch to process at once
             obs_batch = np.concatenate(obs)
             # get actions for all agents to step the env
             if warmup:
@@ -128,7 +139,6 @@ class MPERunner(RecRunner):
             obs = next_obs
             share_obs = next_share_obs
 
-            assert self.num_envs == 1, ("only one env is support here.")
             if terminate_episodes:
                 break
 
@@ -151,171 +161,115 @@ class MPERunner(RecRunner):
         env_info['average_episode_rewards'] = average_episode_rewards
 
         return env_info
-    
+
     # for mpe-simple_speaker_listener
     @torch.no_grad()
     def separated_collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout in which each agent has its own policy. Used for the simple speaker listener env.
+
+        :param explore: (bool) whether to use an exploration policy for rollout collection.
+        :param training_episode (bool) whether this episode contributes to the total number of training steps
+        :param warmup (bool): whether to collect episode with purely random actions
+        """
         env_info = {}
         env = self.env if training_episode or warmup else self.eval_env
 
         obs = env.reset()
-        share_obs = []
-        for o in obs:
-            share_obs.append(list(chain(*o)))
-        share_obs = np.array(share_obs)
-
-        agent_obs = []
-        for agent_id in range(self.num_agents):
-            env_obs = []
-            for o in obs:
-                env_obs.append(o[agent_id])
-            env_obs = np.array(env_obs)
-            agent_obs.append(env_obs)
 
         rnn_states = np.zeros((self.num_agents, self.num_envs, self.hidden_size), dtype=np.float32)
 
-        # [agents, parallel envs, dim]
-        last_acts = []
-        episode_obs = {}
-        episode_share_obs = {}
-        episode_acts = {}
-        episode_rewards = {}
-        episode_next_obs = {}
-        episode_next_share_obs = {}
-        episode_dones = {}
-        episode_dones_env = {}
-        episode_avail_acts = {}
-        episode_next_avail_acts = {}
-        accumulated_rewards = {}
-
-        for i, p_id in enumerate(self.policy_ids):
-            if is_multidiscrete(self.policy_info[p_id]['act_space']):
-                self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
-            else:
-                self.sum_act_dim = self.policy_act_dim[p_id]
-            last_act = np.zeros((self.num_envs, self.sum_act_dim))
-            last_acts.append(last_act)
-
-            # init
-            episode_obs[p_id] = np.zeros((self.episode_length, self.num_envs, 1, agent_obs[i].shape[-1]), dtype=np.float32)
-            episode_share_obs[p_id] = np.zeros((self.episode_length, self.num_envs, share_obs.shape[-1]), dtype=np.float32)
-            episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
-            episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
-            accumulated_rewards[p_id] = []
-            episode_next_obs[p_id] = np.zeros_like(episode_obs[p_id])
-            episode_next_share_obs[p_id] = np.zeros_like(episode_share_obs[p_id])
-            episode_dones[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
-            episode_dones_env[p_id] = np.ones((self.episode_length, self.num_envs, 1), dtype=np.float32)
-            episode_avail_acts[p_id] = None
-            episode_next_avail_acts[p_id] = None
+        last_acts = {p_id : np.zeros((self.num_envs, len(self.policy_agents[p_id]), self.policies[p_id].act_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_obs = {p_id : np.zeros((self.episode_length + 1, self.num_envs, len(self.policy_agents[p_id]), self.policies[p_id].obs_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_share_obs = {p_id : np.zeros((self.episode_length + 1, self.num_envs, len(self.policy_agents[p_id]), self.policies[p_id].central_obs_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_acts = {p_id : np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.policies[p_id].act_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_rewards = {p_id : np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32) for p_id in self.policy_ids}
+        episode_dones = {p_id : np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32) for p_id in self.policy_ids}
+        episode_dones_env = {p_id : np.zeros((self.episode_length, self.num_envs, 1), dtype=np.float32) for p_id in self.policy_ids}
+        episode_avail_acts = {p_id : None for p_id in self.policy_ids}
 
         t = 0
-        episode_step = 0
         while t < self.episode_length:
             for agent_id, p_id in zip(self.agent_ids, self.policy_ids):
                 policy = self.policies[p_id]
+                agent_obs = np.stack(obs[:, agent_id])
+                share_obs = np.concatenate([obs[0, i] for i in range(self.num_agents)]).reshape(self.num_envs,
+                                                                                                -1).astype(np.float32)
                 # get actions for all agents to step the env
                 if warmup:
                     # completely random actions in pre-training warmup phase
                     # [parallel envs, agents, dim]
-                    act = policy.get_random_actions(agent_obs[agent_id])
+                    act = policy.get_random_actions(agent_obs)
                     # get new rnn hidden state
-                    _, rnn_state, _ = policy.get_actions(agent_obs[agent_id],
-                                                        last_acts[agent_id],
+                    _, rnn_state, _ = policy.get_actions(agent_obs,
+                                                        last_acts[p_id][:, 0],
                                                         rnn_states[agent_id])
                 else:
                     # get actions with exploration noise (eps-greedy/Gaussian)
                     if self.algorithm_name == "rmasac":
-                        act, rnn_state, _ = policy.get_actions(agent_obs[agent_id],
-                                                                last_acts[agent_id],
+                        act, rnn_state, _ = policy.get_actions(agent_obs,
+                                                                last_acts[p_id],
                                                                 rnn_states[agent_id],
                                                                 sample=explore)
                     else:
-                        act, rnn_state, _ = policy.get_actions(agent_obs[agent_id],
-                                                                last_acts[agent_id],
+                        act, rnn_state, _ = policy.get_actions(agent_obs,
+                                                                last_acts[p_id],
                                                                 rnn_states[agent_id],
                                                                 t_env=self.total_env_steps,
                                                                 explore=explore)
                 # update rnn hidden state
-                if not isinstance(rnn_state, np.ndarray):
-                    rnn_states[agent_id] = rnn_state.cpu().detach().numpy()
+                rnn_states[agent_id] = rnn_state if isinstance(rnn_state, np.ndarray) else rnn_state.cpu().detach().numpy()
+                last_acts[p_id] = np.expand_dims(act, axis=1) if isinstance(act, np.ndarray) else np.expand_dims(act.cpu().detach().numpy(), axis=1)
 
-                if not isinstance(act, np.ndarray):
-                    act = act.cpu().detach().numpy()
-                    
-                last_acts[agent_id] = act
+                episode_obs[p_id][t] = agent_obs
+                episode_share_obs[p_id][t] = share_obs
+                episode_acts[p_id][t] = act
+
+
 
             env_acts = []
             for i in range(self.num_envs):
                 env_act = []
-                for agent_id in range(self.num_agents):
-                    env_act.append(last_acts[agent_id][i])
+                for p_id in self.policy_ids:
+                    env_act.append(last_acts[p_id][i, 0])
                 env_acts.append(env_act)
 
             # env step and store the relevant episode information
             next_obs, rewards, dones, infos = env.step(env_acts)
 
-            t += 1
-            
-            if training_episode:
-                self.total_env_steps += self.num_envs
-            next_share_obs = []
-            for no in next_obs:
-                next_share_obs.append(list(chain(*no)))
-            next_share_obs = np.array(next_share_obs)
-
-            next_agent_obs = []
-            for agent_id in range(self.num_agents):
-                next_env_obs = []
-                for no in next_obs:
-                    next_env_obs.append(no[agent_id])
-                next_env_obs = np.array(next_env_obs)
-                next_agent_obs.append(next_env_obs)
-
             dones_env = np.all(dones, axis=1)
-            terminate_episodes = np.any(dones_env) or t == self.episode_length
+            terminate_episodes = np.any(dones_env) or t == self.episode_length - 1
             if terminate_episodes:
                 dones_env = np.ones_like(dones_env).astype(bool)
 
+
             for agent_id, p_id in zip(self.agent_ids, self.policy_ids):
-                episode_obs[p_id][episode_step] = np.expand_dims(agent_obs[agent_id], axis=1)
-                episode_share_obs[p_id][episode_step] = share_obs
-                episode_acts[p_id][episode_step] = np.expand_dims(last_acts[agent_id], axis=1)
-                episode_rewards[p_id][episode_step] = np.expand_dims(rewards[:, agent_id], axis=1)
-                episode_next_obs[p_id][episode_step] = np.expand_dims(next_agent_obs[agent_id], axis=1)
-                episode_next_share_obs[p_id][episode_step] = next_share_obs
-                episode_dones[p_id][episode_step] = np.expand_dims(dones[:, agent_id], axis=1)
-                episode_dones_env[p_id][episode_step] = dones_env
+                episode_rewards[p_id][t] = np.expand_dims(rewards[:, agent_id], axis=1)
+                episode_dones[p_id][t] = np.expand_dims(dones[:, agent_id], axis=1)
+                episode_dones_env[p_id][t] = dones_env
 
-                accumulated_rewards[p_id].append(rewards[:, agent_id])
+            obs = next_obs
+            t += 1
 
-            episode_step += 1
-            agent_obs = next_agent_obs
-            share_obs = next_share_obs
+            if training_episode:
+                self.total_env_steps += self.num_envs
 
-            assert self.num_envs == 1, ("only one env is support here.")
             if terminate_episodes:
                 break
 
+        for agent_id, p_id in zip(self.agent_ids, self.policy_ids):
+            episode_obs[p_id][t] = np.stack(obs[:, agent_id])
+            episode_share_obs[p_id][t] = np.concatenate([obs[0, i] for i in range(self.num_agents)]).reshape(self.num_envs,
+                                                                                                -1).astype(np.float32)
+
         if explore:
             self.num_episodes_collected += self.num_envs
-            # push all episodes collected in this rollout step to the buffer
-            self.buffer.insert(self.num_envs,
-                               episode_obs,
-                               episode_share_obs,
-                               episode_acts,
-                               episode_rewards,
-                               episode_next_obs,
-                               episode_next_share_obs,
-                               episode_dones,
-                               episode_dones_env,
-                               episode_avail_acts,
-                               episode_next_avail_acts)
+            self.buffer.insert(self.num_envs, episode_obs, episode_share_obs, episode_acts, episode_rewards, episode_dones, episode_dones_env, episode_avail_acts)
 
         average_episode_rewards = []
         for p_id in self.policy_ids:
-            average_episode_rewards.append(np.mean(np.sum(accumulated_rewards[p_id], axis=0)))
-        
+            average_episode_rewards.append(np.mean(np.sum(episode_rewards[p_id], axis=0)))
+
         env_info['average_episode_rewards'] = np.mean(average_episode_rewards)
 
         return env_info

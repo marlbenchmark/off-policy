@@ -111,7 +111,7 @@ class R_MADDPG:
         batch_size = obs_batch[update_policy_id].shape[2]
 
         rew_sequence = check(rew_batch[update_policy_id][0]).to(**self.tpdv)
-        # ! use numpy
+        # use numpy
         env_done_sequence = check(dones_env_batch[update_policy_id]).to(**self.tpdv)
         # mask the Q and target Q sequences with shifted dones (assume the first obs in episode is valid)
         first_step_dones = torch.zeros((1, env_done_sequence.shape[1], env_done_sequence.shape[2])).to(**self.tpdv)

@@ -57,7 +57,7 @@ def parse_args(args, parser):
                         default='simple_spread', help="Which scenario to run on")
     parser.add_argument("--num_landmarks", type=int, default=3)
     parser.add_argument('--num_agents', type=int,
-                        default=3, help="number of agents")
+                        default=2, help="number of agents")
     parser.add_argument('--use_same_share_obs', action='store_false',
                         default=True, help="Whether to use available actions")
 
@@ -125,6 +125,7 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
+    # create env
     env = make_train_env(all_args)
     num_agents = all_args.num_agents
 

@@ -93,6 +93,7 @@ class RecRunner(object):
 
         self.env = config["env"]
         self.eval_env = config["eval_env"]
+        # no parallel envs
         self.num_envs = 1
 
         # dir
