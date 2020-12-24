@@ -1,6 +1,6 @@
 import torch
 import copy
-from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, check
+from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, to_torch
 from offpolicy.algorithms.qmix.algorithm.q_mixer import QMixer
 from offpolicy.utils.popart import PopArt
 import numpy as np
@@ -73,14 +73,14 @@ class QMix:
             importance_weights, idxes = batch
 
         if use_same_share_obs:
-            cent_obs_batch = check(cent_obs_batch[self.policy_ids[0]])
-            cent_nobs_batch = check(cent_nobs_batch[self.policy_ids[0]])
+            cent_obs_batch = to_torch(cent_obs_batch[self.policy_ids[0]])
+            cent_nobs_batch = to_torch(cent_nobs_batch[self.policy_ids[0]])
         else:
             choose_agent_id = 0
-            cent_obs_batch = check(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
-            cent_nobs_batch = check(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_obs_batch = to_torch(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_nobs_batch = to_torch(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
 
-        dones_env_batch = check(dones_env_batch[self.policy_ids[0]]).to(**self.tpdv)
+        dones_env_batch = to_torch(dones_env_batch[self.policy_ids[0]]).to(**self.tpdv)
 
         # individual agent q value sequences: each element is of shape (ep_len, batch_size, 1)
         agent_q_sequences = []
@@ -90,10 +90,10 @@ class QMix:
 
         for p_id in self.policy_ids:
             # get data related to the policy id
-            rewards = check(rew_batch[p_id][0]).to(**self.tpdv)
-            curr_obs_batch = check(obs_batch[p_id])
-            curr_act_batch = check(act_batch[p_id]).to(**self.tpdv)
-            curr_nobs_batch = check(nobs_batch[p_id])
+            rewards = to_torch(rew_batch[p_id][0]).to(**self.tpdv)
+            curr_obs_batch = to_torch(obs_batch[p_id])
+            curr_act_batch = to_torch(act_batch[p_id]).to(**self.tpdv)
+            curr_nobs_batch = to_torch(nobs_batch[p_id])
 
             # stack over agents to process them all at once
             stacked_act_batch = torch.cat(list(curr_act_batch), dim=-2)
@@ -101,7 +101,7 @@ class QMix:
             stacked_nobs_batch = torch.cat(list(curr_nobs_batch), dim=-2)
 
             if navail_act_batch[p_id] is not None:
-                curr_navail_act_batch = check(navail_act_batch[p_id])
+                curr_navail_act_batch = to_torch(navail_act_batch[p_id])
                 stacked_navail_act_batch = torch.cat(list(curr_navail_act_batch), dim=-2)
             else:
                 stacked_navail_act_batch = None
@@ -253,7 +253,7 @@ class QMix:
         Q_tot_targets = Q_tot_targets * (1 - curr_env_dones)
 
         if self.use_value_active_masks:
-            curr_agent_dones = check(dones_batch[p_id][choose_agent_id]).to(**self.tpdv)
+            curr_agent_dones = to_torch(dones_batch[p_id][choose_agent_id]).to(**self.tpdv)
             predicted_Q_tots = predicted_Q_tots * (1 - curr_agent_dones)
             Q_tot_targets = Q_tot_targets * (1 - curr_agent_dones)
 
@@ -261,7 +261,7 @@ class QMix:
         error = predicted_Q_tots - Q_tot_targets.detach()
 
         if self.use_per:
-            importance_weights = check(importance_weights).to(**self.tpdv)
+            importance_weights = to_torch(importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 per_batch_error = huber_loss(error, self.huber_delta).sum(dim=0).flatten()
             else:

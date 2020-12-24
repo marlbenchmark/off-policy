@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from offpolicy.utils.util import init, check
+from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.rnn import RNNBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
@@ -29,8 +29,8 @@ class AgentQFunction(nn.Module):
 
     def forward(self, obs, rnn_states):
         # make sure input is a torch tensor
-        obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
+        obs = to_torch(obs).to(**self.tpdv)
+        rnn_states = to_torch(rnn_states).to(**self.tpdv)
 
         no_sequence = False
         if len(obs.shape) == 2:

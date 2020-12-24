@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn.functional as F
 import copy
 import itertools
-from offpolicy.utils.util import huber_loss, mse_loss, check
+from offpolicy.utils.util import huber_loss, mse_loss, to_torch
 from offpolicy.utils.popart import PopArt
 
 class MATD3:
@@ -88,8 +88,8 @@ class MATD3:
             next_step_Q1, next_step_Q2 = next_step_Q1.view(-1, 1), next_step_Q2.view(-1, 1)
             next_step_Q = torch.min(next_step_Q1, next_step_Q2)
 
-        rewards = check(rewards).to(**self.tpdv).view(-1, 1) 
-        dones_env = check(dones_env).to(**self.tpdv).view(-1, 1)
+        rewards = to_torch(rewards).to(**self.tpdv).view(-1, 1)
+        dones_env = to_torch(dones_env).to(**self.tpdv).view(-1, 1)
 
         if self.use_popart:
             target_Qs = rewards + self.args.gamma * (1 - dones_env) * self.value_normalizer[p_id].denormalize(next_step_Q)
@@ -104,7 +104,7 @@ class MATD3:
         error_2 = (target_Qs.detach() - predicted_Q2)
 
         if self.use_per:
-            importance_weights = check(importance_weights).to(**self.tpdv)
+            importance_weights = to_torch(importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).flatten()
                 critic_loss_2 = huber_loss(error_2, self.huber_delta).flatten()
@@ -177,10 +177,10 @@ class MATD3:
                 masks.append(curr_mask)
 
                 # agent dones
-                agent_done_batch = check(dones_batch[update_policy_id][i]).to(**self.tpdv)
+                agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
                 done_mask.append(agent_done_batch)
             # cat to form into tensors
-            mask = check(np.concatenate(masks)).to(**self.tpdv)
+            mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
             done_mask = torch.cat(done_mask, dim=0)
             total_batch_size = batch_size * num_update_agents
             pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
@@ -193,7 +193,7 @@ class MATD3:
             # separate into individual agent batches
             agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
 
-            cent_act = list(map(lambda arr: check(arr).to(**self.tpdv), cent_act))
+            cent_act = list(map(lambda arr: to_torch(arr).to(**self.tpdv), cent_act))
             actor_cent_acts = copy.deepcopy(cent_act)
             for i in range(num_update_agents):
                 actor_cent_acts[replace_ind_start + i] = agent_actor_batches[i]
@@ -263,9 +263,9 @@ class MATD3:
         all_agent_rewards = np.tile(rewards, (num_update_agents, 1))
 
         # critic update
-        all_agent_rewards = check(all_agent_rewards).to(**self.tpdv).reshape(-1, 1)
-        all_env_dones = check(all_env_dones).to(**self.tpdv).reshape(-1, 1)
-        all_agent_dones = check(dones).to(**self.tpdv).reshape(-1, 1)
+        all_agent_rewards = to_torch(all_agent_rewards).to(**self.tpdv).reshape(-1, 1)
+        all_env_dones = to_torch(all_env_dones).to(**self.tpdv).reshape(-1, 1)
+        all_agent_dones = to_torch(dones).to(**self.tpdv).reshape(-1, 1)
 
         with torch.no_grad():
             next_step_Q1, next_step_Q2 = update_policy.target_critic(all_agent_cent_nobs, all_agent_cent_nact)
@@ -287,7 +287,7 @@ class MATD3:
 
         if self.use_per:
             agent_importance_weights = np.tile(importance_weights, num_update_agents)
-            agent_importance_weights = check(agent_importance_weights).to(**self.tpdv)
+            agent_importance_weights = to_torch(agent_importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).flatten()
                 critic_loss_2 = huber_loss(error_2, self.huber_delta).flatten()
@@ -375,10 +375,10 @@ class MATD3:
                 masks.append(curr_mask)
 
                 # agent dones
-                agent_done_batch = check(dones_batch[update_policy_id][i]).to(**self.tpdv)
+                agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
                 done_mask.append(agent_done_batch)
             # cat to form into tensors
-            mask = check(np.concatenate(masks)).to(**self.tpdv)
+            mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
             done_mask = torch.cat(done_mask, dim=0)
 
             pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
@@ -392,7 +392,7 @@ class MATD3:
             # separate into individual agent batches
             agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
 
-            cent_act = list(map(lambda arr: check(arr).to(**self.tpdv), cent_act))
+            cent_act = list(map(lambda arr: to_torch(arr).to(**self.tpdv), cent_act))
             actor_cent_acts = copy.deepcopy(cent_act)
             for i in range(num_update_agents):
                 actor_cent_acts[replace_ind_start + i] = agent_actor_batches[i]
@@ -400,7 +400,7 @@ class MATD3:
             actor_cent_acts = torch.cat(actor_cent_acts, dim=-1).repeat((num_update_agents, 1))
 
             # combine the buffer cent acts with actor cent acts and pass into buffer
-            actor_update_cent_acts = mask * actor_cent_acts + (1 - mask) * check(all_agent_cent_act_buffer).to(**self.tpdv)
+            actor_update_cent_acts = mask * actor_cent_acts + (1 - mask) * to_torch(all_agent_cent_act_buffer).to(**self.tpdv)
             actor_Qs = update_policy.critic.Q1(all_agent_cent_obs, actor_update_cent_acts)
             # TODO: add mask
             #actor_loss = -actor_Qs.mean()

@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn.functional as F
 import copy
 import itertools
-from offpolicy.utils.util import huber_loss, mse_loss, check
+from offpolicy.utils.util import huber_loss, mse_loss, to_torch
 from offpolicy.utils.popart import PopArt
 
 class MASAC:
@@ -93,8 +93,8 @@ class MASAC:
             next_step_Q1, next_step_Q2 = update_policy.target_critic(cent_nobs, cent_nact)
             next_step_Q = torch.min(next_step_Q1, next_step_Q2)
 
-        rewards = check(rewards).to(**self.tpdv).view(-1, 1) 
-        dones_env = check(dones_env).to(**self.tpdv).view(-1, 1)
+        rewards = to_torch(rewards).to(**self.tpdv).view(-1, 1)
+        dones_env = to_torch(dones_env).to(**self.tpdv).view(-1, 1)
 
         # the expectation of V(s_t+1) is approximated with a single action sample
         if self.use_popart:
@@ -114,7 +114,7 @@ class MASAC:
         error_2 = (target_Qs.detach() - predicted_Q2)
 
         if self.use_per:
-            importance_weights = check(importance_weights).to(**self.tpdv)
+            importance_weights = to_torch(importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).flatten()
                 critic_loss_2 = huber_loss(error_2, self.huber_delta).flatten()
@@ -183,10 +183,10 @@ class MASAC:
             masks.append(curr_mask)
 
             # agent dones
-            agent_done_batch = check(dones_batch[update_policy_id][i]).to(**self.tpdv)
+            agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
             done_mask.append(agent_done_batch)
         # cat to form into tensors
-        mask = check(np.concatenate(masks)).to(**self.tpdv)
+        mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=0)
 
         pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
@@ -200,7 +200,7 @@ class MASAC:
         agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
         agent_actor_logprobs = pol_logprobs.split(split_size=batch_size, dim=0)
 
-        cent_act = list(map(lambda arr: check(arr).to(**self.tpdv), cent_act))
+        cent_act = list(map(lambda arr: to_torch(arr).to(**self.tpdv), cent_act))
         actor_cent_acts = copy.deepcopy(cent_act)
         for i in range(num_update_agents):
             actor_cent_acts[replace_ind_start + i] = agent_actor_batches[i]
@@ -230,7 +230,7 @@ class MASAC:
         if self.args.automatic_entropy_tune:
             # double check this loss calculation
             if isinstance(update_policy.target_entropy, np.ndarray):
-                update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
+                update_policy.target_entropy = to_torch(update_policy.target_entropy).to(**self.tpdv)
             
             entropy = (pol_logprobs + update_policy.target_entropy).mean()
             alpha_loss = -(update_policy.log_alpha.to(**self.tpdv) * (pol_logprobs + update_policy.target_entropy).detach())
@@ -296,9 +296,9 @@ class MASAC:
         all_agent_nact_logprobs = torch.cat(update_agent_logprobs, axis=0)
 
         # critic update
-        all_agent_rewards = check(all_agent_rewards).to(**self.tpdv).reshape(-1, 1)
-        all_env_dones = check(all_env_dones).to(**self.tpdv).reshape(-1, 1)
-        all_agent_dones = check(dones).to(**self.tpdv).reshape(-1, 1)
+        all_agent_rewards = to_torch(all_agent_rewards).to(**self.tpdv).reshape(-1, 1)
+        all_env_dones = to_torch(all_env_dones).to(**self.tpdv).reshape(-1, 1)
+        all_agent_dones = to_torch(dones).to(**self.tpdv).reshape(-1, 1)
 
         with torch.no_grad():
             next_step_Q1, next_step_Q2 = update_policy.target_critic(all_agent_cent_nobs, all_agent_cent_nact)
@@ -323,7 +323,7 @@ class MASAC:
 
         if self.use_per:
             agent_importance_weights = np.tile(importance_weights, num_update_agents)
-            agent_importance_weights = check(agent_importance_weights).to(**self.tpdv)
+            agent_importance_weights = to_torch(agent_importance_weights).to(**self.tpdv)
             if self.use_huber_loss:
                 critic_loss_1 = huber_loss(error_1, self.huber_delta).flatten()
                 critic_loss_2 = huber_loss(error_2, self.huber_delta).flatten()
@@ -407,10 +407,10 @@ class MASAC:
             masks.append(curr_mask)
 
             # agent dones
-            agent_done_batch = check(dones_batch[update_policy_id][i]).to(**self.tpdv)
+            agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
             done_mask.append(agent_done_batch)
         # cat to form into tensors
-        mask = check(np.concatenate(masks)).to(**self.tpdv)
+        mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=0)
 
         pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
@@ -424,7 +424,7 @@ class MASAC:
         agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
         agent_actor_logprobs = pol_logprobs.split(split_size=batch_size, dim=0)
 
-        cent_act = list(map(lambda arr: check(arr).to(**self.tpdv), cent_act))
+        cent_act = list(map(lambda arr: to_torch(arr).to(**self.tpdv), cent_act))
         # cat along final dim to formulate centralized action and stack copies of the batch
         actor_cent_acts = copy.deepcopy(cent_act)
         for i in range(num_update_agents):
@@ -432,7 +432,7 @@ class MASAC:
 
         actor_cent_acts = torch.cat(actor_cent_acts, dim=-1).repeat((num_update_agents, 1))
 
-        actor_update_cent_acts = mask * actor_cent_acts * (1 - mask) * check(all_agent_cent_act_buffer).to(**self.tpdv)
+        actor_update_cent_acts = mask * actor_cent_acts * (1 - mask) * to_torch(all_agent_cent_act_buffer).to(**self.tpdv)
         pol_Q1, pol_Q2 = update_policy.critic(all_agent_cent_obs, actor_update_cent_acts)
         pol_Q = torch.min(pol_Q1, pol_Q2)
         actor_loss = update_policy.alpha * pol_logprobs - pol_Q
@@ -449,7 +449,7 @@ class MASAC:
         # entropy temperature update
         if self.args.automatic_entropy_tune:
             if isinstance(update_policy.target_entropy, np.ndarray):
-                update_policy.target_entropy = check(update_policy.target_entropy).to(**self.tpdv)
+                update_policy.target_entropy = to_torch(update_policy.target_entropy).to(**self.tpdv)
             
             # double check this loss calculation
             entropy = (pol_logprobs + update_policy.target_entropy).mean()

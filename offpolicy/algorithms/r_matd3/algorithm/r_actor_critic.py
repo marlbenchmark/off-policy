@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from offpolicy.utils.util import init, check
+from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.rnn import RNNBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
@@ -30,10 +30,10 @@ class R_Actor(nn.Module):
 
     def forward(self, obs, prev_acts, rnn_states):
         # make sure input is a torch tensor
-        obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
+        obs = to_torch(obs).to(**self.tpdv)
+        rnn_states = to_torch(rnn_states).to(**self.tpdv)
         if prev_acts is not None:
-            prev_acts = check(prev_acts).to(**self.tpdv)       
+            prev_acts = to_torch(prev_acts).to(**self.tpdv)
 
         no_sequence = False
         if len(obs.shape) == 2:
@@ -79,9 +79,9 @@ class R_Critic(nn.Module):
 
     def forward(self, central_obs, central_act, rnn_states):
         # ensure inputs are torch tensors
-        central_obs = check(central_obs).to(**self.tpdv)
-        central_act = check(central_act).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
+        central_obs = to_torch(central_obs).to(**self.tpdv)
+        central_act = to_torch(central_act).to(**self.tpdv)
+        rnn_states = to_torch(rnn_states).to(**self.tpdv)
 
         no_sequence = False
         if len(central_obs.shape) == 2 and len(central_act.shape) == 2:
@@ -109,9 +109,9 @@ class R_Critic(nn.Module):
 
     def Q1(self, central_obs, central_act, rnn_states):
         # ensure inputs are torch tensors
-        central_obs = check(central_obs).to(**self.tpdv)
-        central_act = check(central_act).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
+        central_obs = to_torch(central_obs).to(**self.tpdv)
+        central_act = to_torch(central_act).to(**self.tpdv)
+        rnn_states = to_torch(rnn_states).to(**self.tpdv)
 
         no_sequence = False
         if len(central_obs.shape) == 2 and len(central_act.shape) == 2:

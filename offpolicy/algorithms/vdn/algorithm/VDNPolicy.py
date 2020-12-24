@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from offpolicy.algorithms.vdn.algorithm.agent_q_function import AgentQFunction
 from torch.distributions import Categorical, OneHotCategorical
-from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, check, _t2n
+from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, _t2n
 
 
 class VDNPolicy:
@@ -48,7 +48,7 @@ class VDNPolicy:
 
         # combine previous action with observation for input into q, if specified in args
         if self.args.prev_act_inp:
-            prev_action_batch = check(prev_action_batch)
+            prev_action_batch = to_torch(prev_action_batch)
             input_batch = torch.cat((obs_batch, prev_action_batch), dim=-1)
         else:
             input_batch = obs_batch
@@ -56,7 +56,7 @@ class VDNPolicy:
         q_batch, new_rnn_states = self.q_network(input_batch, rnn_states)
 
         if action_batch is not None:
-            action_batch = check(action_batch).to(self.device)
+            action_batch = to_torch(action_batch).to(self.device)
             if self.multidiscrete:
                 ind = 0
                 all_q_values = []

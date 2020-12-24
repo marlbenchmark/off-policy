@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from offpolicy.utils.util import init, check
+from offpolicy.utils.util import init, to_torch
 
 class M_QMixer(nn.Module):
     """
@@ -66,8 +66,8 @@ class M_QMixer(nn.Module):
 
     def forward(self, agent_q_inps, states):
         """outputs Q_tot, using the individual agent Q values and the centralized env state as inputs"""
-        agent_q_inps = check(agent_q_inps).to(**self.tpdv)
-        states = check(states).to(**self.tpdv)
+        agent_q_inps = to_torch(agent_q_inps).to(**self.tpdv)
+        states = to_torch(states).to(**self.tpdv)
 
         batch_size = agent_q_inps.size(0)
         states = states.view(-1, self.cent_obs_dim).float()

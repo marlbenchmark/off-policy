@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from offpolicy.utils.util import init, check
+from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.mlp import MLPBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
@@ -26,7 +26,7 @@ class AgentQFunction(nn.Module):
 
     def forward(self, x):
         # make sure input is a torch tensor
-        x = check(x).to(**self.tpdv)
+        x = to_torch(x).to(**self.tpdv)
         x = self.mlp(x)
         # pass outputs through linear layer
         q_value = self.q(x)

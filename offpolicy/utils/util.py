@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 from torch.autograd import Variable
 
-def check(input):
+def to_torch(input):
     return torch.from_numpy(input) if type(input) == np.ndarray else input
 
 def _t2n(x):
@@ -160,11 +160,11 @@ def onehot_from_logits(logits, avail_logits=None, eps=0.0):
     (based on given epsilon)
     """
     # get best (according to current policy) actions in one-hot form
-    logits = check(logits)
+    logits = to_torch(logits)
     
     dim = len(logits.shape) - 1
     if avail_logits is not None:
-        avail_logits = check(avail_logits)
+        avail_logits = to_torch(avail_logits)
         logits[avail_logits == 0] = -1e10
     argmax_acs = (logits == logits.max(dim, keepdim=True)[0]).float()
     if eps == 0.0:
@@ -192,7 +192,7 @@ def gumbel_softmax_sample(logits, avail_logits, temperature, device=torch.device
 
     dim = len(logits.shape) - 1
     if avail_logits != None:
-        avail_logits = check(avail_logits).to(device)
+        avail_logits = to_torch(avail_logits).to(device)
         y[avail_logits==0] = -1e10
     return F.softmax(y / temperature, dim=dim)
 
@@ -296,9 +296,9 @@ def make_onehot(int_action, action_dim, seq_len=None):
 
 
 def avail_choose(x, avail_x=None):
-    x = check(x)
+    x = to_torch(x)
     if avail_x is not None:
-        avail_x = check(avail_x)
+        avail_x = to_torch(avail_x)
         x[avail_x == 0] = -1e10
     return x#FixedCategorical(logits=x)
 

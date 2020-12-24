@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from offpolicy.algorithms.mqmix.algorithm.agent_q_function import AgentQFunction
 from torch.distributions import Categorical, OneHotCategorical
-from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, check, _t2n
+from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, _t2n
 
 
 class M_QMixPolicy:

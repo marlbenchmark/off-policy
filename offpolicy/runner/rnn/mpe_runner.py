@@ -81,16 +81,18 @@ class MPERunner(RecRunner):
                                                             rnn_states_batch)
             else:
                 if self.algorithm_name == "rmasac":
-                    act, rnn_states_batch, _ = policy.get_actions(obs_batch, last_acts_batch, rnn_states_batch, sample=explore)
-                # get actions with exploration noise (eps-greedy/Gaussian)
-                acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                    last_acts_batch,
-                                                                    rnn_states_batch,
-                                                                    t_env=self.total_env_steps,
-                                                                    explore=explore)
+                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch, last_acts_batch, rnn_states_batch, sample=explore)
+                else:
+                    # get actions with exploration noise (eps-greedy/Gaussian)
+                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                        last_acts_batch,
+                                                                        rnn_states_batch,
+                                                                        t_env=self.total_env_steps,
+                                                                        explore=explore)
+            acts_batch = acts_batch if isinstance(acts_batch, np.ndarray) else acts_batch.cpu().detach().numpy()
             # update rnn hidden state
             rnn_states_batch = rnn_states_batch if isinstance(rnn_states_batch, np.ndarray) else rnn_states_batch.cpu().detach().numpy()
-            last_acts_batch = acts_batch if isinstance(acts_batch, np.ndarray) else acts_batch.cpu().detach().numpy()
+            last_acts_batch = acts_batch
 
             env_acts = np.split(acts_batch, self.num_envs)
             # env step and store the relevant episode information
@@ -103,7 +105,7 @@ class MPERunner(RecRunner):
 
             episode_obs[p_id][t] = obs
             episode_share_obs[p_id][t] = share_obs
-            episode_acts[p_id][t] = env_acts
+            episode_acts[p_id][t] = np.stack(env_acts)
             episode_rewards[p_id][t] = rewards
             episode_dones[p_id][t] = dones
             episode_dones_env[p_id][t] = dones_env

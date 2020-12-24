@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from offpolicy.utils.util import check
+from offpolicy.utils.util import to_torch
 
 
 class M_VDNMixer(nn.Module):
@@ -25,6 +25,6 @@ class M_VDNMixer(nn.Module):
 
     def forward(self, agent_q_inps):
         """outputs Q_tot, using the individual agent Q values and the centralized env state as inputs"""
-        agent_q_inps = check(agent_q_inps)
+        agent_q_inps = to_torch(agent_q_inps)
 
         return agent_q_inps.sum(dim=-1).view(-1, 1, 1)

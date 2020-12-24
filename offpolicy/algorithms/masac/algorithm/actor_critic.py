@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from offpolicy.utils.util import init, check
+from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.mlp import MLPBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
@@ -37,8 +37,8 @@ class Critic(nn.Module):
 
     def forward(self, central_obs, central_act):
         # ensure inputs are torch tensors
-        central_obs = check(central_obs).to(**self.tpdv)
-        central_act = check(central_act).to(**self.tpdv)
+        central_obs = to_torch(central_obs).to(**self.tpdv)
+        central_act = to_torch(central_act).to(**self.tpdv)
 
         x = torch.cat([central_obs, central_act], dim=1)
 
@@ -70,7 +70,7 @@ class DiscreteActor(nn.Module):
 
     def forward(self, x):
         # make sure input is a torch tensor
-        x = check(x).to(**self.tpdv)
+        x = to_torch(x).to(**self.tpdv)
 
         x = self.mlp(x)
         action_logits = self.act(x)
@@ -101,7 +101,7 @@ class GaussianActor(nn.Module):
 
     def forward(self, x):
 
-        x = check(x).to(**self.tpdv)
+        x = to_torch(x).to(**self.tpdv)
 
         x = self.mlp(x)
 
