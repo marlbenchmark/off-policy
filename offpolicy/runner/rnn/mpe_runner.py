@@ -53,44 +53,22 @@ class MPERunner(RecRunner):
         env = self.env if training_episode or warmup else self.eval_env
 
         obs = env.reset()
-        share_obs = obs.reshape(self.num_envs, -1)
 
-        rnn_states_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.hidden_size), dtype=np.float32)
-        if is_multidiscrete(self.policy_info[p_id]['act_space']):
-            self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
-        else:
-            self.sum_act_dim = self.policy_act_dim[p_id]
-
-        last_acts_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
+        rnn_states_batch = np.zeros((self.num_envs * self.num_agents, self.hidden_size), dtype=np.float32)
+        last_acts_batch = np.zeros((self.num_envs * self.num_agents, policy.act_dim), dtype=np.float32)
 
         # initialize variables to store episode information.
-        episode_obs = {}
-        episode_share_obs = {}
-        episode_acts = {}
-        episode_rewards = {}
-        episode_next_obs = {}
-        episode_next_share_obs = {}
-        episode_dones = {}
-        episode_dones_env = {}
-        episode_avail_acts = {}
-        episode_next_avail_acts = {}
-        accumulated_rewards = {}
-
-        episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape), dtype=np.float32)
-        episode_share_obs[p_id] = np.zeros((self.episode_length, *share_obs.shape), dtype=np.float32)
-        episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
-        episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
-        episode_next_obs[p_id] = np.zeros_like((episode_obs[p_id]))
-        episode_next_share_obs[p_id] = np.zeros_like((episode_share_obs[p_id]))
-        episode_dones[p_id] = np.ones((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
-        episode_dones_env[p_id] = np.ones((self.episode_length, self.num_envs, 1), dtype=np.float32)
-        episode_avail_acts[p_id] = None
-        episode_next_avail_acts[p_id] = None
-        accumulated_rewards[p_id] = []
+        episode_obs = {p_id : np.zeros((self.episode_length + 1, self.num_envs, self.num_agents, policy.obs_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_share_obs = {p_id : np.zeros((self.episode_length + 1, self.num_envs, self.num_agents, policy.central_obs_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_acts = {p_id : np.zeros((self.episode_length, self.num_envs, self.num_agents, policy.act_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_rewards = {p_id : np.zeros((self.episode_length, self.num_envs, self.num_agents, 1), dtype=np.float32) for p_id in self.policy_ids}
+        episode_dones = {p_id : np.zeros((self.episode_length, self.num_envs, self.num_agents, 1), dtype=np.float32) for p_id in self.policy_ids}
+        episode_dones_env = {p_id : np.zeros((self.episode_length, self.num_envs, 1), dtype=np.float32) for p_id in self.policy_ids}
+        episode_avail_acts = {p_id : None for p_id in self.policy_ids}
 
         t = 0
-        episode_step = 0
         while t < self.episode_length:
+            share_obs = obs.reshape(self.num_envs, -1)
             # group observations from parallel envs into one batch to process at once
             obs_batch = np.concatenate(obs)
             # get actions for all agents to step the env
@@ -102,6 +80,8 @@ class MPERunner(RecRunner):
                                                             last_acts_batch,
                                                             rnn_states_batch)
             else:
+                if self.algorithm_name == "rmasac":
+                    act, rnn_states_batch, _ = policy.get_actions(obs_batch, last_acts_batch, rnn_states_batch, sample=explore)
                 # get actions with exploration noise (eps-greedy/Gaussian)
                 acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
                                                                     last_acts_batch,
@@ -109,38 +89,33 @@ class MPERunner(RecRunner):
                                                                     t_env=self.total_env_steps,
                                                                     explore=explore)
             # update rnn hidden state
-            rnn_states_batch = rnn_states_batch.detach()
-            last_acts_batch = acts_batch
-            if not isinstance(acts_batch, np.ndarray):
-                acts_batch = acts_batch.cpu().detach().numpy()
+            rnn_states_batch = rnn_states_batch if isinstance(rnn_states_batch, np.ndarray) else rnn_states_batch.cpu().detach().numpy()
+            last_acts_batch = acts_batch if isinstance(acts_batch, np.ndarray) else acts_batch.cpu().detach().numpy()
 
             env_acts = np.split(acts_batch, self.num_envs)
             # env step and store the relevant episode information
             next_obs, rewards, dones, infos = env.step(env_acts)
-            next_share_obs = next_obs.reshape(self.num_envs, -1)
-            t += 1
             if training_episode:
                 self.total_env_steps += self.num_envs
 
             dones_env = np.all(dones, axis=1)
-            terminate_episodes = np.any(dones_env) or t == self.episode_length
+            terminate_episodes = np.any(dones_env) or t == self.episode_length - 1
 
-            episode_obs[p_id][episode_step] = obs
-            episode_share_obs[p_id][episode_step] = share_obs
-            episode_acts[p_id][episode_step] = env_acts
-            episode_rewards[p_id][episode_step] = rewards
-            accumulated_rewards[p_id].append(rewards.copy())
-            episode_next_obs[p_id][episode_step] = next_obs
-            episode_next_share_obs[p_id][episode_step] = next_share_obs
-            episode_dones[p_id][episode_step] = dones
-            episode_dones_env[p_id][episode_step] = dones_env
-            episode_step += 1
+            episode_obs[p_id][t] = obs
+            episode_share_obs[p_id][t] = share_obs
+            episode_acts[p_id][t] = env_acts
+            episode_rewards[p_id][t] = rewards
+            episode_dones[p_id][t] = dones
+            episode_dones_env[p_id][t] = dones_env
+            t += 1
 
             obs = next_obs
-            share_obs = next_share_obs
 
             if terminate_episodes:
                 break
+
+        episode_obs[p_id][t] = obs
+        episode_share_obs[p_id][t] = obs.reshape(self.num_envs, -1)
 
         if explore:
             self.num_episodes_collected += self.num_envs
@@ -150,14 +125,11 @@ class MPERunner(RecRunner):
                                episode_share_obs,
                                episode_acts,
                                episode_rewards,
-                               episode_next_obs,
-                               episode_next_share_obs,
                                episode_dones,
                                episode_dones_env,
-                               episode_avail_acts,
-                               episode_next_avail_acts)
+                               episode_avail_acts)
 
-        average_episode_rewards = np.mean(np.sum(accumulated_rewards[p_id], axis=0))
+        average_episode_rewards = np.mean(np.sum(episode_rewards[p_id], axis=0))
         env_info['average_episode_rewards'] = average_episode_rewards
 
         return env_info
