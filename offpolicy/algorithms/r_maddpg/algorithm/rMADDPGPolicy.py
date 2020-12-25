@@ -45,7 +45,7 @@ class R_MADDPGPolicy:
                 # eps greedy exploration
                 self.exploration = DecayThenFlatSchedule(self.args.epsilon_start, self.args.epsilon_finish,
                                                          self.args.epsilon_anneal_time, decay="linear")
- 
+        self.target_noise = None
 
     def get_actions(self, obs, prev_actions, actor_rnn_states, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
         assert prev_actions is None or len(obs.shape) == len(prev_actions.shape)
@@ -65,7 +65,7 @@ class R_MADDPGPolicy:
 
         if self.discrete:
             if self.multidiscrete:
-                if use_gumbel:
+                if use_gumbel or (use_target and self.target_noise is not None):
                     onehot_actions = list(map(lambda a: gumbel_softmax(a, hard=True, device=self.device), actor_out))
                     actions = torch.cat(onehot_actions, dim=-1)
                 elif explore:
@@ -85,11 +85,11 @@ class R_MADDPGPolicy:
                     actions = torch.cat(onehot_actions, dim=-1)
   
             else:
-                if use_gumbel:
+                if use_gumbel or (use_target and self.target_noise is not None):
                     actions = gumbel_softmax(actor_out, available_actions, hard=True, device=self.device)  # gumbel has a gradient 
                 elif explore:
                     onehot_actions = gumbel_softmax(actor_out, available_actions, hard=True, device=self.device)  # gumbel has a gradient                    
-                    assert no_sequence, "Doesn't make sense to do exploration on a sequence!"
+                    assert no_sequence, "Cannot do exploration on a sequence!"
                     # eps greedy exploration
                     eps = self.exploration.eval(t_env)
                     rand_numbers = np.random.rand(batch_size, 1)
@@ -105,6 +105,9 @@ class R_MADDPGPolicy:
             if explore:
                 assert no_sequence, "Cannot do exploration on a sequence!"
                 actions = gaussian_noise(actor_out.shape, self.args.act_noise_std) + actor_out
+            elif use_target and self.target_noise is not None:
+                assert isinstance(self.target_noise, float)
+                actions = gaussian_noise(actor_out.shape, self.target_noise) + actor_out
             else:
                 actions = actor_out
             # # clip the actions at the bounds of the action space

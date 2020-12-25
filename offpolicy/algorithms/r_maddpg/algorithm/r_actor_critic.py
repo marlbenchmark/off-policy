@@ -61,6 +61,7 @@ class R_Critic(nn.Module):
         self.hidden_size = args.hidden_size
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
+        self.num_q_outs = 1
 
         input_dim = central_obs_dim + central_act_dim
 
@@ -69,7 +70,7 @@ class R_Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
-        self.q_out = init_(nn.Linear(self.hidden_size, 1))
+        self.q_outs = [init_(nn.Linear(self.hidden_size, 1)) for _ in range(self.num_q_outs)]
         
         self.to(device)
 
@@ -92,10 +93,10 @@ class R_Critic(nn.Module):
         inp = torch.cat([central_obs, central_act], dim=2)
 
         rnn_outs, h_final = self.rnn(inp, rnn_states)
-        q_values = self.q_out(rnn_outs)
+        q_values = [q_out(rnn_outs) for q_out in self.q_outs]
 
         if no_sequence:
             # remove the time dimension
-            q_values = q_values[0, :, :]
+            q_values = [q[0, :, :] for q in q_values]
 
         return q_values, h_final
