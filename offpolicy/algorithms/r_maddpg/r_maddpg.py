@@ -297,30 +297,40 @@ class R_MADDPG:
         # unpack the batch
         obs_batch, cent_obs_batch, \
         act_batch, rew_batch, \
-        nobs_batch, cent_nobs_batch, \
         dones_batch, dones_env_batch, \
-        avail_act_batch, navail_act_batch, \
+        avail_act_batch, \
         importance_weights, idxes = batch
         # obs_batch: dict mapping policy id to batches where each batch is shape (# agents, ep_len, batch_size, obs_dim)
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
+        pol_act_dim = int(sum(update_policy.act_dim)) if isinstance(update_policy.act_dim, np.ndarray) else update_policy.act_dim
+        num_update_agents = len(self.policy_agents[update_policy_id])
+        total_batch_size = batch_size * num_update_agents
 
         rew_sequence = to_torch(rew_batch[update_policy_id][0]).to(**self.tpdv)
         env_done_sequence = to_torch(dones_env_batch[update_policy_id]).to(**self.tpdv)
-        cent_obs_sequence = cent_obs_batch[update_policy_id]
-        cent_nobs_sequence = cent_nobs_batch[update_policy_id]
+        cent_obs_sequence = cent_obs_batch[update_policy_id][:-1]
+        cent_nobs_sequence = cent_obs_batch[update_policy_id][1:]
         dones_sequence = dones_batch[update_policy_id]
         # get centralized sequence information
         cent_act_sequence_buffer, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence = \
-            self.get_update_info(update_policy_id, obs_batch, act_batch,
-                                 nobs_batch, avail_act_batch, navail_act_batch)
+            self.get_update_info(update_policy_id, obs_batch, act_batch, avail_act_batch)
 
         # combine all agents data into one array/tensor by stacking along batch dim; easier to process
-        num_update_agents = len(self.policy_agents[update_policy_id])
-        total_batch_size = batch_size * num_update_agents
+
         all_agent_cent_obs = np.concatenate(cent_obs_sequence, axis=1)
         all_agent_cent_nobs = np.concatenate(cent_nobs_sequence, axis=1)
         all_agent_dones = np.concatenate(dones_sequence, axis=1)
+
+
+        pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)[:-1]
+        pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, pol_act_dim), dtype=np.float32),
+                                                  np.concatenate(act_batch[update_policy_id][:, :-1], axis=1)))
+        if avail_act_batch[update_policy_id] is not None:
+            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
+        else:
+            pol_agents_avail_act_seq = None
+
         # since this is same for each agent, just repeat when stacking
         all_agent_cent_act_buffer = np.tile(cent_act_sequence_buffer, (1, num_update_agents, 1))
         all_agent_cent_nact = np.tile(cent_nact_sequence, (1, num_update_agents, 1))
@@ -423,22 +433,16 @@ class R_MADDPG:
                 sum_act_dim = int(sum(self.policies[p_id].act_dim))
             else:
                 sum_act_dim = self.policies[p_id].act_dim
-            for a_id in self.policy_agents[p_id]:
+            for _ in self.policy_agents[p_id]:
                 mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
         done_mask = []
-        sum_act_dim = None
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
             curr_mask_temp = copy.deepcopy(mask_temp)
             # set the mask to 1 at locations where the action should come from the actor output
-            if isinstance(update_policy.act_dim, np.ndarray):
-                # multidiscrete case
-                sum_act_dim = int(sum(update_policy.act_dim))
-            else:
-                sum_act_dim = update_policy.act_dim
-            curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(sum_act_dim, dtype=np.float32)
+            curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(pol_act_dim, dtype=np.float32)
             curr_mask_vec = np.concatenate(curr_mask_temp)
             # expand this mask into the proper size
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
@@ -459,14 +463,6 @@ class R_MADDPG:
         mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=1).to(**self.tpdv)
 
-        # stack obs, acts, and available acts of all agents along batch dimension to process at once
-        pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim), dtype=np.float32),
-                                                  np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
-        pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)
-        if avail_act_batch[update_policy_id] is not None:
-            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
-        else:
-            pol_agents_avail_act_seq = None
         # get all the actions from actor, with gumbel softmax to differentiate through the samples
         policy_act_seq, _, _ = update_policy.get_actions(pol_agents_obs_seq, pol_prev_buffer_act_seq,
                                                          update_policy.init_hidden(-1, total_batch_size),
