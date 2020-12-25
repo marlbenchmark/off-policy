@@ -2,12 +2,13 @@ import numpy as np
 import torch
 from torch.distributions import OneHotCategorical
 from offpolicy.algorithms.r_maddpg.algorithm.r_actor_critic import R_Actor, R_Critic
+from offpolicy.algorithms.r_matd3_new.algorithm.r_actor_critic import R_MATD3_Actor, R_MATD3_Critic
 from offpolicy.utils.util import get_state_dim, is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, _t2n
 
 
 class R_MADDPGPolicy:
-    def __init__(self, config, policy_config, train=True):
+    def __init__(self, config, policy_config, target_noise=None, td3=False, train=True):
 
         self.config = config
         self.device = config['device']
@@ -27,11 +28,14 @@ class R_MADDPGPolicy:
         self.discrete = is_discrete(self.act_space)
         self.multidiscrete = is_multidiscrete(self.act_space)
 
-        self.actor = R_Actor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
-        self.critic = R_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        actor_class = R_MATD3_Actor if td3 else R_Actor
+        critic_class = R_MATD3_Critic if td3 else R_Critic
+        self.actor = actor_class(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
+        self.critic = critic_class(self.args, self.central_obs_dim, self.central_act_dim, self.device)
 
-        self.target_actor = R_Actor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
-        self.target_critic = R_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+
+        self.target_actor = actor_class(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
+        self.target_critic = critic_class(self.args, self.central_obs_dim, self.central_act_dim, self.device)
 
         # sync the target weights
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -45,7 +49,7 @@ class R_MADDPGPolicy:
                 # eps greedy exploration
                 self.exploration = DecayThenFlatSchedule(self.args.epsilon_start, self.args.epsilon_finish,
                                                          self.args.epsilon_anneal_time, decay="linear")
-        self.target_noise = None
+        self.target_noise = target_noise
 
     def get_actions(self, obs, prev_actions, actor_rnn_states, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
         assert prev_actions is None or len(obs.shape) == len(prev_actions.shape)

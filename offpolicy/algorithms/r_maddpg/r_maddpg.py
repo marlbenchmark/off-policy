@@ -7,7 +7,7 @@ from offpolicy.utils.popart import PopArt
 
 
 class R_MADDPG:
-    def __init__(self, args, num_agents, policies, policy_mapping_fn, device=None, episode_length=None):
+    def __init__(self, args, num_agents, policies, policy_mapping_fn, device=None, episode_length=None, actor_update_interval=1):
         """Contains all policies and does policy updates"""
         self.args = args
         self.use_popart = self.args.use_popart
@@ -33,7 +33,7 @@ class R_MADDPG:
             self.policies.keys()}
         if self.use_popart:
             self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
-        self.actor_update_interval = 1
+        self.actor_update_interval = actor_update_interval
         self.num_updates = 0
 
     def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):

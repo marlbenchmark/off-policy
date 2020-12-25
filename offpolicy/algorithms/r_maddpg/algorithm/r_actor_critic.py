@@ -55,13 +55,13 @@ class R_Actor(nn.Module):
 
 
 class R_Critic(nn.Module):
-    def __init__(self, args, central_obs_dim, central_act_dim, device):
+    def __init__(self, args, central_obs_dim, central_act_dim, device, num_q_outs=1):
         super(R_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
-        self.num_q_outs = 1
+        self.num_q_outs = num_q_outs
 
         input_dim = central_obs_dim + central_act_dim
 

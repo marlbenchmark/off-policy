@@ -129,7 +129,8 @@ def get_config():
                         help="After how many episodes the lagging target should be updated")
     parser.add_argument('--hard_update_interval', type=int, default=200,
                         help="After how many timesteps the lagging target should be updated")
-
+    # rmatd3 parameters
+    parser.add_argument("--target_action_noise_std", default=0.2, help="Target action smoothing noise for matd3")
     # rmasac parameters
     parser.add_argument('--alpha', type=float, default=1.0,
                         help="Initial temperature")
