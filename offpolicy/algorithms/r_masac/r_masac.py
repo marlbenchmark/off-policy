@@ -36,7 +36,6 @@ class R_MASAC:
     def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):
         act_sequences = []
         nact_sequences = []
-        update_policy_nact_probs = None
         update_policy_nact_log_probs = None
         act_sequence_replace_ind_start = None
 
