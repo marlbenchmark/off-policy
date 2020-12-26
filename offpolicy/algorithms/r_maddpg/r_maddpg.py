@@ -50,7 +50,6 @@ class R_MADDPG:
                 act_sequence_replace_ind_start = ind
             num_pol_agents = len(self.policy_agents[p_id])
             act_sequences.append(list(act_batch[p_id]))
-            # get first observation for all agents under policy and stack them along batch dim
             batched_obs_seq = np.concatenate(obs_batch[p_id], axis=1)
             # same with buffer actions and available actions
             batched_act_seq = np.concatenate(act_batch[p_id], axis=1)
@@ -108,6 +107,7 @@ class R_MADDPG:
         batch_size = obs_batch[update_policy_id].shape[2]
         total_batch_size = batch_size * num_update_agents
         pol_act_dim = int(sum(update_policy.act_dim)) if isinstance(update_policy.act_dim, np.ndarray) else update_policy.act_dim
+
         rew_sequence = to_torch(rew_batch[update_policy_id][0]).to(**self.tpdv)
         # use numpy
         env_done_sequence = to_torch(dones_env_batch[update_policy_id]).to(**self.tpdv)
@@ -124,7 +124,7 @@ class R_MADDPG:
         # group data from agents corresponding to one policy into one larger batch
         pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)[:-1]
         if avail_act_batch[update_policy_id] is not None:
-            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
+            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)[:-1]
         else:
             pol_agents_avail_act_seq = None
         pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, pol_act_dim), dtype=np.float32), np.concatenate(act_batch[update_policy_id][:, :-1], axis=1)))
@@ -346,7 +346,7 @@ class R_MADDPG:
         pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, pol_act_dim), dtype=np.float32),
                                                   np.concatenate(act_batch[update_policy_id][:, :-1], axis=1)))
         if avail_act_batch[update_policy_id] is not None:
-            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
+            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)[:-1]
         else:
             pol_agents_avail_act_seq = None
 

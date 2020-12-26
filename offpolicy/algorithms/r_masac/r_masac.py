@@ -33,7 +33,7 @@ class R_MASAC:
             self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
 
     # @profile
-    def get_update_info(self, update_policy_id, obs_batch, act_batch, nobs_batch, avail_act_batch, navail_act_batch):
+    def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):
         act_sequences = []
         nact_sequences = []
         update_policy_nact_probs = None
@@ -48,16 +48,15 @@ class R_MASAC:
                 act_sequence_replace_ind_start = ind
             num_pol_agents = len(self.policy_agents[p_id])
             act_sequences.append(list(act_batch[p_id]))
-            # get first observation for all agents under policy and stack them along batch dim
-            first_obs = np.concatenate(obs_batch[p_id][:, 0], axis=0)
-            # same with available actions
+            batched_obs_seq = np.concatenate(obs_batch[p_id], axis=1)
+            # same with buffer actions and available actions
+            batched_act_seq = np.concatenate(act_batch[p_id], axis=1)
             if avail_act_batch[p_id] is not None:
-                first_avail_act = np.concatenate(avail_act_batch[p_id][:, 0])
+                batched_avail_act_seq = np.concatenate(avail_act_batch[p_id], axis=1)
             else:
-                first_avail_act = None
-            total_batch_size = first_obs.shape[0]
-            batch_size = total_batch_size // num_pol_agents
-            # no gradient tracking is necessary for target actions
+                batched_avail_act_seq = None
+            total_batch_size = batched_obs_seq.shape[1]
+            batch_size = total_batch_size // num_pol_agents            # no gradient tracking is necessary for target actions
             with torch.no_grad():
                 # step target actor through the first actions
                 if isinstance(policy.act_dim, np.ndarray):
@@ -65,32 +64,17 @@ class R_MASAC:
                     sum_act_dim = int(sum(policy.act_dim))
                 else:
                     sum_act_dim = policy.act_dim
-                _, new_target_rnns,_ = policy.get_actions(first_obs, 
-                                                           np.zeros((total_batch_size, sum_act_dim), dtype=np.float32),
-                                                           policy.init_hidden(-1, total_batch_size),
-                                                           available_actions=first_avail_act)
-
-                # stack the nobs and acts of all the agents along batch dimension (data from buffer)
-                combined_nobs_seq_batch = np.concatenate(nobs_batch[p_id], axis=1)
-                combined_act_seq_batch = np.concatenate(act_batch[p_id], axis=1)
-                if navail_act_batch[p_id] is not None:
-                    combined_navail_act_batch = np.concatenate(navail_act_batch[p_id], axis=1)
-                else:
-                    combined_navail_act_batch = None
-                # pass the entire buffer sequence of all agents to the target actor to get targ actions at each step
-                pol_nact_seq, pol_nact_log_probs, _ = policy.get_actions(combined_nobs_seq_batch,
-                                                                         combined_act_seq_batch,
-                                                                         new_target_rnns.float(),
-                                                                         available_actions=combined_navail_act_batch,
-                                                                         explore=True)
+                batched_prev_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim), dtype=np.float32), batched_act_seq[:-1]))
+                pol_nact_seq, pol_nact_log_probs, _ = policy.get_actions(batched_obs_seq, batched_prev_act_seq, policy.init_hidden(-1, total_batch_size), available_actions=batched_avail_act_seq, explore=True)
+                pol_nact_seq = pol_nact_seq[1:]
                 # separate the actions into individual agent actions
-                ind_agent_nact_seqs = pol_nact_seq.cpu().split(split_size=batch_size, dim=1)
-                ind_agent_nact_log_probs = pol_nact_log_probs.split(split_size=batch_size, dim=1)
+                agent_nact_seqs = pol_nact_seq.cpu().split(split_size=batch_size, dim=1)
+                agent_nact_log_probs = pol_nact_log_probs.split(split_size=batch_size, dim=1)
 
             if p_id == update_policy_id:
-                update_policy_nact_log_probs = ind_agent_nact_log_probs
+                update_policy_nact_log_probs = agent_nact_log_probs
             # cat to form centralized next step action
-            nact_sequences.append(torch.cat(ind_agent_nact_seqs, dim=-1))
+            nact_sequences.append(torch.cat(agent_nact_seqs, dim=-1))
             # increase ind by number agents just processed
             ind += num_pol_agents
 
@@ -104,18 +88,21 @@ class R_MASAC:
         return cent_act_sequence_critic, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence, all_agent_nact_log_probs, update_policy_nact_log_probs
 
     # @profile
-    def shared_train_policy_on_batch(self, update_policy_id, batch, update_actor=None):
+    def shared_train_policy_on_batch(self, update_policy_id, batch):
         # unpack the batch
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
             dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
+            avail_act_batch, importance_weights, idxes = batch
+
+        train_info = {}
 
         # obs_batch: dict mapping policy id to batches where each batch is shape (# agents, chunk_len, batch_size, obs_dim)
+        num_update_agents = len(self.policy_agents[update_policy_id])
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
+        total_batch_size = batch_size * num_update_agents
+        pol_act_dim = int(sum(update_policy.act_dim)) if isinstance(update_policy.act_dim, np.ndarray) else update_policy.act_dim
 
         rew_sequence = to_torch(rew_batch[update_policy_id][0]).to(**self.tpdv)
         env_done_sequence = to_torch(dones_env_batch[update_policy_id]).to(**self.tpdv)
@@ -124,13 +111,22 @@ class R_MASAC:
         next_steps_dones = env_done_sequence[: self.episode_length - 1, :, :]
         curr_env_dones = torch.cat((first_step_dones, next_steps_dones), dim=0)
 
-        cent_obs_sequence = cent_obs_batch[update_policy_id]
-        cent_nobs_sequence = cent_nobs_batch[update_policy_id]
+        cent_obs_sequence = cent_obs_batch[update_policy_id][:-1]
+        cent_nobs_sequence = cent_obs_batch[update_policy_id][1:]
+
+        # stack obs, acts, and available acts of all agents along batch dimension to process at once
+        pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, pol_act_dim), dtype=np.float32),
+                                                  np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
+
+        pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)[:-1]
+        if avail_act_batch[update_policy_id] is not None:
+            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)[:-1]
+        else:
+            pol_agents_avail_act_seq = None
 
         # get centralized sequence information: cent_obs_sequence is tensor of shape (ep_len, batch_size, cent obs dim)
         cent_act_sequence_buffer, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence, all_agent_nact_log_prob_seq, _ = \
-            self.get_update_info(update_policy_id, obs_batch, act_batch,
-                                 nobs_batch, avail_act_batch, navail_act_batch)
+            self.get_update_info(update_policy_id, obs_batch, act_batch, avail_act_batch)
 
         all_agent_nact_log_prob_seq = all_agent_nact_log_prob_seq.to(**self.tpdv)
 
@@ -224,12 +220,12 @@ class R_MASAC:
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
 
+        # Actor update
         # freeze Q-networks
         for p in update_policy.critic.parameters():
             p.requires_grad = False
 
         actor_loss_sequences = []
-        num_update_agents = len(self.policy_agents[update_policy_id])
         # formulate mask to determine how to combine actor output actions with batch output actions
         mask_temp = []
         for p_id in self.policy_ids:
@@ -239,22 +235,15 @@ class R_MASAC:
             else:
                 sum_act_dim = self.policies[p_id].act_dim
 
-            for a_id in self.policy_agents[p_id]:
+            for _ in self.policy_agents[p_id]:
                 mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
         done_mask = []
-        sum_act_dim = None
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
             curr_mask_temp = copy.deepcopy(mask_temp)
-            # set the mask to 1 at locations where the action should come from the actor output
-            if isinstance(update_policy.act_dim, np.ndarray):
-                # multidiscrete case
-                sum_act_dim = int(sum(update_policy.act_dim))
-            else:
-                sum_act_dim = update_policy.act_dim
-            curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(sum_act_dim, dtype=np.float32)
+            curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(pol_act_dim, dtype=np.float32)
             curr_mask_vec = np.concatenate(curr_mask_temp)
             # expand this mask into the proper size
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
@@ -271,16 +260,6 @@ class R_MASAC:
         mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=1).to(**self.tpdv)
 
-        total_batch_size = batch_size * num_update_agents
-        # stack obs, acts, and available acts of all agents along batch dimension to process at once
-        pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim), dtype=np.float32),
-                                                  np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
-
-        pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)
-        if avail_act_batch[update_policy_id] is not None:
-            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
-        else:
-            pol_agents_avail_act_seq = None
         # get all the actions from actor, with gumbel softmax to differentiate through the samples
         policy_act_seq, _, policy_log_prob_seq = update_policy.get_actions(pol_agents_obs_seq,
                                                                            pol_prev_buffer_act_seq,
@@ -356,7 +335,6 @@ class R_MASAC:
             alpha_loss = torch.scalar_tensor(0.0)
             entropy = torch.scalar_tensor(0.0)
 
-        train_info = {}
         train_info['critic_loss'] = critic_loss
         train_info['actor_loss'] = actor_loss
         train_info['alpha_loss'] = alpha_loss
@@ -364,35 +342,37 @@ class R_MASAC:
         train_info['actor_grad_norm'] = actor_grad_norm
         train_info['alpha'] = update_policy.alpha
         train_info['entropy'] = entropy
+        train_info['update_actor'] = True
 
         return train_info, new_priorities, idxes
 
-    def cent_train_policy_on_batch(self, update_policy_id, batch, update_actor=None):
+    def cent_train_policy_on_batch(self, update_policy_id, batch):
         # unpack the batch
         obs_batch, cent_obs_batch, \
-            act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
-            dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
-        # obs_batch: dict mapping policy id to batches where each batch is shape (# agents, chunk_len, batch_size, obs_dim)
+        act_batch, rew_batch, \
+        dones_batch, dones_env_batch, \
+        avail_act_batch, \
+        importance_weights, idxes = batch
+
+        train_info = {}
+
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[2]
+        pol_act_dim = int(sum(update_policy.act_dim)) if isinstance(update_policy.act_dim, np.ndarray) else update_policy.act_dim
+        num_update_agents = len(self.policy_agents[update_policy_id])
+        total_batch_size = batch_size * num_update_agents
 
         rew_sequence = to_torch(rew_batch[update_policy_id][0]).to(**self.tpdv)
         env_done_sequence = to_torch(dones_env_batch[update_policy_id]).to(**self.tpdv)
-        cent_obs_sequence = cent_obs_batch[update_policy_id]
-        cent_nobs_sequence = cent_nobs_batch[update_policy_id]
+        cent_obs_sequence = cent_obs_batch[update_policy_id][:-1]
+        cent_nobs_sequence = cent_obs_batch[update_policy_id][1:]
         dones_sequence = dones_batch[update_policy_id]
 
         # get centralized sequence information: cent_obs_sequence is tensor of shape (ep_len, batch_size, cent obs dim)
         cent_act_sequence_buffer, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence, all_agent_nact_log_prob_seq, update_pol_nact_logprobs = \
-            self.get_update_info(update_policy_id, obs_batch, act_batch,
-                                 nobs_batch, avail_act_batch, navail_act_batch)
+            self.get_update_info(update_policy_id, obs_batch, act_batch, avail_act_batch)
 
         # combine all agents data into one array/tensor by stacking along batch dim; easier to process
-        num_update_agents = len(self.policy_agents[update_policy_id])
-        total_batch_size = batch_size * num_update_agents
         all_agent_cent_obs = np.concatenate(cent_obs_sequence, axis=1)
         all_agent_cent_nobs = np.concatenate(cent_nobs_sequence, axis=1)
         all_agent_dones = np.concatenate(dones_sequence, axis=1)
@@ -405,6 +385,16 @@ class R_MASAC:
         first_step_dones = torch.zeros((1, all_env_dones.shape[1], all_env_dones.shape[2])).to(**self.tpdv)
         next_steps_dones = all_env_dones[:self.episode_length - 1, :, :].float()
         curr_env_dones = torch.cat((first_step_dones, next_steps_dones), dim=0)
+
+        # stack obs, acts, and available acts of all agents along batch dimension to process at once
+        pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, pol_act_dim), dtype=np.float32),
+                                                  np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
+
+        pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)[:-1]
+        if avail_act_batch[update_policy_id] is not None:
+            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)[:-1]
+        else:
+            pol_agents_avail_act_seq = None
 
         predicted_Q1_sequence, predicted_Q2_sequence, _ = update_policy.critic(all_agent_cent_obs, 
                                                                             all_agent_cent_act_buffer, 
@@ -514,7 +504,7 @@ class R_MASAC:
                                                                  self.args.max_grad_norm)
         update_policy.critic_optimizer.step()
 
-        # actor update: can form losses for each agent that the update policy controls
+        # actor update
         # freeze Q-networks
         for p in update_policy.critic.parameters():
             p.requires_grad = False
@@ -529,22 +519,15 @@ class R_MASAC:
                 sum_act_dim = int(sum(self.policies[p_id].act_dim))
             else:
                 sum_act_dim = self.policies[p_id].act_dim
-            for a_id in self.policy_agents[p_id]:
+            for _ in self.policy_agents[p_id]:
                 mask_temp.append(np.zeros(sum_act_dim))
 
         masks = []
         done_mask = []
-        sum_act_dim = None
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
             curr_mask_temp = copy.deepcopy(mask_temp)
-            # set the mask to 1 at locations where the action should come from the actor output
-            if isinstance(update_policy.act_dim, np.ndarray):
-                # multidiscrete case
-                sum_act_dim = int(sum(update_policy.act_dim))
-            else:
-                sum_act_dim = update_policy.act_dim
-            curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(sum_act_dim, dtype=np.float32)
+            curr_mask_temp[act_sequence_replace_ind_start + i] = np.ones(pol_act_dim, dtype=np.float32)
             curr_mask_vec = np.concatenate(curr_mask_temp)
             # expand this mask into the proper size
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
@@ -565,16 +548,6 @@ class R_MASAC:
         mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
         done_mask = torch.cat(done_mask, dim=1).to(**self.tpdv)
 
-        total_batch_size = batch_size * num_update_agents
-        # stack obs, acts, and available acts of all agents along batch dimension to process at once
-        pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, sum_act_dim), dtype=np.float32),
-                                                  np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
-
-        pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)
-        if avail_act_batch[update_policy_id] is not None:
-            pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)
-        else:
-            pol_agents_avail_act_seq = None
         # get all the actions from actor, with gumbel softmax to differentiate through the samples
         policy_act_seq, _, policy_log_prob_seq = update_policy.get_actions(pol_agents_obs_seq,
                                                                            pol_prev_buffer_act_seq,
@@ -625,7 +598,6 @@ class R_MASAC:
             p.requires_grad = True
 
         if self.args.automatic_entropy_tune:
-            # TODO @Akash double check this, is it right for multi-discrete action
             update_policy.target_entropy = to_torch(update_policy.target_entropy).to(**self.tpdv)
             # entropy temperature update
             alpha_loss_sequence = -(update_policy.log_alpha.to(**self.tpdv) * (policy_log_prob_seq + update_policy.target_entropy).detach())
@@ -645,7 +617,6 @@ class R_MASAC:
             alpha_loss = torch.scalar_tensor(0.0)
             entropy = torch.scalar_tensor(0.0)
 
-        train_info = {}
         train_info['critic_loss'] = critic_loss
         train_info['actor_loss'] = actor_loss
         train_info['alpha_loss'] = alpha_loss
@@ -653,6 +624,7 @@ class R_MASAC:
         train_info['actor_grad_norm'] = actor_grad_norm
         train_info['alpha'] = update_policy.alpha
         train_info['entropy'] = entropy
+        train_info['update_actor'] = True
 
         return train_info, new_priorities, idxes
 
