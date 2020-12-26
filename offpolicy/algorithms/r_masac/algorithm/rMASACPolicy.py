@@ -2,10 +2,11 @@ import torch
 import numpy as np
 from torch.distributions import Normal, OneHotCategorical
 from offpolicy.algorithms.r_masac.algorithm.r_actor_critic import R_GaussianActor, R_DiscreteActor, R_Critic
-from offpolicy.utils.util import get_state_dim, is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
-    gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, _t2n
+from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, soft_update, hard_update, \
+    gumbel_softmax, onehot_from_logits, avail_choose
+from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
 
-class R_MASACPolicy:
+class R_MASACPolicy(RecurrentPolicy):
     def __init__(self, config, policy_config, train=True):
 
         self.config = config
@@ -127,18 +128,6 @@ class R_MASACPolicy:
 
         return actions, h_outs, dist_entropies
 
-    def init_hidden(self, num_agents, batch_size, use_numpy=False):
-        if use_numpy:
-            if num_agents == -1:
-                return np.zeros((batch_size, self.hidden_size), dtype=np.float32)
-            else:
-                return np.zeros((num_agents, batch_size, self.hidden_size), dtype=np.float32)
-        else:
-            if num_agents == -1:
-                return torch.zeros(batch_size, self.hidden_size)
-            else:
-                return torch.zeros(num_agents, batch_size, self.hidden_size)
-
     def get_random_actions(self, obs, available_actions=None):
         batch_size = obs.shape[0]
 
@@ -157,6 +146,18 @@ class R_MASACPolicy:
             random_actions = np.random.uniform(self.act_space.low, self.act_space.high, size=(batch_size, self.act_dim))
 
         return random_actions
+
+    def init_hidden(self, num_agents, batch_size, use_numpy=False):
+        if use_numpy:
+            if num_agents == -1:
+                return np.zeros((batch_size, self.hidden_size), dtype=np.float32)
+            else:
+                return np.zeros((num_agents, batch_size, self.hidden_size), dtype=np.float32)
+        else:
+            if num_agents == -1:
+                return torch.zeros(batch_size, self.hidden_size)
+            else:
+                return torch.zeros(num_agents, batch_size, self.hidden_size)
 
     def soft_target_updates(self):
         # polyak updates to target networks

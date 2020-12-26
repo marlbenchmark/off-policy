@@ -3,11 +3,12 @@ import torch
 from torch.distributions import OneHotCategorical
 from offpolicy.algorithms.r_maddpg.algorithm.r_actor_critic import R_Actor, R_Critic
 from offpolicy.algorithms.r_matd3.algorithm.r_actor_critic import R_MATD3_Actor, R_MATD3_Critic
-from offpolicy.utils.util import get_state_dim, is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
+from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, _t2n
+from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
 
 
-class R_MADDPGPolicy:
+class R_MADDPGPolicy(RecurrentPolicy):
     def __init__(self, config, policy_config, target_noise=None, td3=False, train=True):
 
         self.config = config

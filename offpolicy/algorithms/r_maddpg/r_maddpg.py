@@ -4,9 +4,9 @@ import copy
 import itertools
 from offpolicy.utils.util import huber_loss, mse_loss, to_torch
 from offpolicy.utils.popart import PopArt
+from offpolicy.algorithms.common.recurrent_trainer import RecurrentTrainer
 
-
-class R_MADDPG:
+class R_MADDPG(RecurrentTrainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=None, episode_length=None, actor_update_interval=1):
         """Contains all policies and does policy updates"""
         self.args = args
