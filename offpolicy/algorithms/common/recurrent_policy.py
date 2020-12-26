@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 class RecurrentPolicy(ABC):
     @abstractmethod
-    def get_actions(self, obs, prev_actions, actor_rnn_states, available_actions, t_env, explore, use_target, use_gumbel):
+    def get_actions(self, obs, prev_actions, rnn_states, available_actions, t_env, explore):
         raise NotImplementedError
 
     @abstractmethod

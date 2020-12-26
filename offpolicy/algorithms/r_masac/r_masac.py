@@ -32,6 +32,7 @@ class R_MASAC(RecurrentTrainer):
             self.policies.keys()}
         if self.use_popart:
             self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
+        self.use_same_share_obs = self.args.use_same_share_obs
 
     # @profile
     def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):
@@ -86,6 +87,12 @@ class R_MASAC(RecurrentTrainer):
         all_agent_nact_log_probs = torch.stack(update_policy_nact_log_probs).sum(dim=0) / len(self.policy_agents[update_policy_id])
 
         return cent_act_sequence_critic, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence, all_agent_nact_log_probs, update_policy_nact_log_probs
+
+    def train_policy_on_batch(self, update_policy_id, batch):
+        if self.use_same_share_obs:
+            return self.shared_train_policy_on_batch(update_policy_id, batch)
+        else:
+            return self.cent_train_policy_on_batch((update_policy_id, batch))
 
     # @profile
     def shared_train_policy_on_batch(self, update_policy_id, batch):

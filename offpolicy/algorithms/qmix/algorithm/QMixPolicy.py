@@ -1,11 +1,12 @@
 import numpy as np
 import torch
 from offpolicy.algorithms.qmix.algorithm.agent_q_function import AgentQFunction
+from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
 from torch.distributions import Categorical, OneHotCategorical
 from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, _t2n
 
 
-class QMixPolicy:
+class QMixPolicy(RecurrentPolicy):
     def __init__(self, config, policy_config, train=True):
         """
         init relevent args
@@ -76,19 +77,19 @@ class QMixPolicy:
             q_values = q_batch
         return q_values, new_rnn_states
 
-    def get_actions(self, obs_batch, prev_action_batch, rnn_states, available_actions=None, t_env=None, explore=False):
+    def get_actions(self, obs, prev_actions, rnn_states, available_actions=None, t_env=None, explore=False):
         """
         get actions in epsilon-greedy manner, if specified
         """
-        if len(obs_batch.shape) == 2:
-            batch_size = obs_batch.shape[0]
+        if len(obs.shape) == 2:
+            batch_size = obs.shape[0]
             no_sequence = True
         else:
-            batch_size = obs_batch.shape[1]
-            seq_len = obs_batch.shape[0]
+            batch_size = obs.shape[1]
+            seq_len = obs.shape[0]
             no_sequence = False
 
-        q_values_out, new_rnn_states = self.get_q_values(obs_batch, prev_action_batch, rnn_states)
+        q_values_out, new_rnn_states = self.get_q_values(obs, prev_actions, rnn_states)
 
         # mask the available actions by giving -inf q values to unavailable actions
         if available_actions is not None:

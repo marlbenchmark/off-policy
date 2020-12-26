@@ -35,6 +35,7 @@ class R_MADDPG(RecurrentTrainer):
             self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
         self.actor_update_interval = actor_update_interval
         self.num_updates = {p_id : 0 for p_id in self.policy_ids}
+        self.use_same_share_obs = self.args.use_same_share_obs
 
     def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):
         """Get centralized state info for current timestep and next timestep, and also step forward target actor RNN"""
@@ -87,6 +88,12 @@ class R_MADDPG(RecurrentTrainer):
         cent_nact_sequence = np.concatenate(nact_sequences, axis=-1)
 
         return cent_act_sequence_critic, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence
+
+    def train_policy_on_batch(self, update_policy_id, batch):
+        if self.use_same_share_obs:
+            return self.shared_train_policy_on_batch(update_policy_id, batch)
+        else:
+            return self.cent_train_policy_on_batch((update_policy_id, batch))
 
     # @profile
     def shared_train_policy_on_batch(self, update_policy_id, batch):

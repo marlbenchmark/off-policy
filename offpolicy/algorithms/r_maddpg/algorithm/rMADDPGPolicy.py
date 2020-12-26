@@ -52,7 +52,7 @@ class R_MADDPGPolicy(RecurrentPolicy):
                                                          self.args.epsilon_anneal_time, decay="linear")
         self.target_noise = target_noise
 
-    def get_actions(self, obs, prev_actions, actor_rnn_states, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
+    def get_actions(self, obs, prev_actions, rnn_states, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
         assert prev_actions is None or len(obs.shape) == len(prev_actions.shape)
         # obs is either an array of shape (batch_size, obs_dim) or (seq_len, batch_size, obs_dim)
         if len(obs.shape) == 2:
@@ -64,9 +64,9 @@ class R_MADDPGPolicy(RecurrentPolicy):
 
         eps = None
         if use_target:
-            actor_out, new_rnn_states = self.target_actor(obs, prev_actions, actor_rnn_states)
+            actor_out, new_rnn_states = self.target_actor(obs, prev_actions, rnn_states)
         else:
-            actor_out, new_rnn_states = self.actor(obs, prev_actions, actor_rnn_states)
+            actor_out, new_rnn_states = self.actor(obs, prev_actions, rnn_states)
 
         if self.discrete:
             if self.multidiscrete:

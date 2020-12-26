@@ -2,10 +2,11 @@ import torch
 import copy
 from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, to_torch
 from offpolicy.algorithms.qmix.algorithm.q_mixer import QMixer
+from offpolicy.algorithms.common.recurrent_trainer import RecurrentTrainer
 from offpolicy.utils.popart import PopArt
 import numpy as np
 
-class QMix:
+class QMix(RecurrentTrainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), episode_length=None):
         """Class to do gradient updates"""
         self.args = args
@@ -38,6 +39,8 @@ class QMix:
         if self.use_popart:
             self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
 
+        self.use_same_share_obs = self.args.use_same_share_obs
+
         multidiscrete_list = None
         if any([isinstance(policy.act_dim, np.ndarray) for policy in self.policies.values()]):
             # multidiscrete
@@ -59,11 +62,11 @@ class QMix:
         self.parameters += self.mixer.parameters()
         self.optimizer = torch.optim.Adam(
             params=self.parameters, lr=self.lr, eps=self.opti_eps)
-        
+
         if self.args.use_double_q:
             print("double Q learning will be used")
 
-    def train_policy_on_batch(self, batch, use_same_share_obs, update_popart):
+    def train_policy_on_batch(self, batch, update_policy_id=None):
         # unpack the batch
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
@@ -72,7 +75,7 @@ class QMix:
             avail_act_batch, navail_act_batch, \
             importance_weights, idxes = batch
 
-        if use_same_share_obs:
+        if self.use_same_share_obs:
             cent_obs_batch = to_torch(cent_obs_batch[self.policy_ids[0]])
             cent_nobs_batch = to_torch(cent_nobs_batch[self.policy_ids[0]])
         else:

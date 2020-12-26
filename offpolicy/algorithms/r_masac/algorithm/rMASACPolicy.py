@@ -54,17 +54,16 @@ class R_MASACPolicy(RecurrentPolicy):
             self.log_alpha = torch.tensor(np.log(self.alpha), requires_grad=True)
             self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=self.lr, eps=self.opti_eps, weight_decay=self.weight_decay)
 
-    def get_actions(self, obs, prev_actions, actor_rnn_states, available_actions=None, t_env=None, explore=False, use_target=None, use_gumbel=False):
+    def get_actions(self, obs, prev_actions, rnn_states, available_actions=None, t_env=None, explore=False, use_target=None, use_gumbel=False):
 
         if self.discrete:
-            actions, h_outs, log_probs =self.get_actions_discrete(obs, prev_actions, actor_rnn_states, available_actions, explore)
+            actions, h_outs, log_probs =self.get_actions_discrete(obs, prev_actions, rnn_states, available_actions, explore)
         else:
-            actions, h_outs, log_probs = self.get_actions_continuous(obs, prev_actions, actor_rnn_states, explore=explore)
+            actions, h_outs, log_probs = self.get_actions_continuous(obs, prev_actions, rnn_states, explore=explore)
 
         return actions, h_outs, log_probs
     
     def get_actions_continuous(self, obs, prev_actions, actor_rnn_states, available_actions=None, explore=False):
-        # TODO: review this method
         means, log_stds, h_outs = self.actor(obs, prev_actions, actor_rnn_states)
         
         stds = log_stds.exp()
@@ -84,7 +83,6 @@ class R_MASACPolicy(RecurrentPolicy):
         return actions, log_probs, h_outs
 
     def get_actions_discrete(self, obs, prev_actions, actor_rnn_states, available_actions=None, explore=False, use_gumbel=False):
-        # TODO: review this method
         act_logits, h_outs = self.actor(obs, prev_actions, actor_rnn_states)
 
         if self.multidiscrete:
