@@ -119,6 +119,7 @@ class R_MASAC(RecurrentTrainer):
         next_steps_dones = env_done_sequence[: self.episode_length - 1, :, :]
         curr_env_dones = torch.cat((first_step_dones, next_steps_dones), dim=0)
 
+        # remove last time dimension for obs sequence, remove first time dimension for next obs sequence
         cent_obs_sequence = cent_obs_batch[update_policy_id][:-1]
         cent_nobs_sequence = cent_obs_batch[update_policy_id][1:]
 
@@ -126,6 +127,7 @@ class R_MASAC(RecurrentTrainer):
         pol_prev_buffer_act_seq = np.concatenate((np.zeros((1, total_batch_size, pol_act_dim), dtype=np.float32),
                                                   np.concatenate(act_batch[update_policy_id][:, : -1], axis=1)))
 
+        # remove last time dimension for obs sequence
         pol_agents_obs_seq = np.concatenate(obs_batch[update_policy_id], axis=1)[:-1]
         if avail_act_batch[update_policy_id] is not None:
             pol_agents_avail_act_seq = np.concatenate(avail_act_batch[update_policy_id], axis=1)[:-1]
@@ -372,6 +374,7 @@ class R_MASAC(RecurrentTrainer):
 
         rew_sequence = to_torch(rew_batch[update_policy_id][0]).to(**self.tpdv)
         env_done_sequence = to_torch(dones_env_batch[update_policy_id]).to(**self.tpdv)
+        # remove last time dimension for obs sequence, remove first time dimension for next obs sequence
         cent_obs_sequence = cent_obs_batch[update_policy_id][:-1]
         cent_nobs_sequence = cent_obs_batch[update_policy_id][1:]
         dones_sequence = dones_batch[update_policy_id]

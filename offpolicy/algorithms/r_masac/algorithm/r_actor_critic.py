@@ -1,9 +1,5 @@
-import copy
-import numpy as np
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.rnn import RNNBase
@@ -13,6 +9,7 @@ LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
 
 class R_Critic(nn.Module):
+    """Centralized critic class."""
     def __init__(self, args, central_obs_dim, central_act_dim, device):
         super(R_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
@@ -34,6 +31,7 @@ class R_Critic(nn.Module):
         self.to(self.device)
 
     def forward(self, central_obs, central_act, rnn_states):
+        """Output Q-values for given central_obs/central_act pairs."""
         # ensure inputs are torch tensors
         central_obs = to_torch(central_obs).to(**self.tpdv)
         central_act = to_torch(central_act).to(**self.tpdv)
@@ -65,6 +63,7 @@ class R_Critic(nn.Module):
 
 
 class R_DiscreteActor(nn.Module):
+    """Actor class for discrete action space."""
     def __init__(self, args, obs_dim, act_dim, device, take_prev_action=False):
         super(R_DiscreteActor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
@@ -74,6 +73,7 @@ class R_DiscreteActor(nn.Module):
         self.take_prev_act = take_prev_action
         self.tpdv = dict(dtype=torch.float32, device=device)
 
+        # take_prev_action determines if the previously taken action should be part of the input
         input_dim = (obs_dim + act_dim) if take_prev_action else obs_dim
 
         # map observation input into input for rnn
@@ -113,6 +113,7 @@ class R_DiscreteActor(nn.Module):
 
 
 class R_GaussianActor(nn.Module):
+    """Actor class for continuous action space."""
     def __init__(self, args, obs_dim, act_dim, device, take_prev_action=False):
         super(R_GaussianActor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
@@ -160,7 +161,6 @@ class R_GaussianActor(nn.Module):
         inp = torch.cat((obs, prev_acts), dim=-1) if self.take_prev_act else obs
 
         rnn_outs, h_final = self.rnn(inp, rnn_states)
-        # pass outputs through linear layer 
         mean_outs = self.mean_layer(rnn_outs)
         log_std_outs = self.log_std_layer(rnn_outs)
         log_std_outs = torch.clamp(log_std_outs, min=LOG_SIG_MIN, max=LOG_SIG_MAX)

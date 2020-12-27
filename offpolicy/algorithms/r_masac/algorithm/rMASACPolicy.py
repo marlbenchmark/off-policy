@@ -30,13 +30,13 @@ class R_MASACPolicy(RecurrentPolicy):
 
         if self.discrete:
             self.actor = R_DiscreteActor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
-            # slightly less than max possible entropy
-            self.target_entropy = -np.log((1.0 / self.act_dim)) * self.target_entropy_coef # ! check this 
+            # set target entropy to a fraction of the max entropy; fraction is determined by target_entropy_coef
+            self.target_entropy = -np.log((1.0 / self.act_dim)) * self.target_entropy_coef
         else:
             self.actor = R_GaussianActor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
             # max possible entropy
             self.target_entropy = -torch.prod(torch.Tensor(self.act_space.shape)).item()
-            # SAC rescaling to respect action bounds (see paper)
+            # SAC rescaling to respect action bounds
             self.action_scale = torch.tensor((self.act_space.high - self.act_space.low) / 2.).float()
             self.action_bias = torch.tensor((self.act_space.high + self.act_space.low) / 2.).float()
 
@@ -63,7 +63,7 @@ class R_MASACPolicy(RecurrentPolicy):
 
         return actions, h_outs, log_probs
     
-    def get_actions_continuous(self, obs, prev_actions, actor_rnn_states, available_actions=None, explore=False):
+    def get_actions_continuous(self, obs, prev_actions, actor_rnn_states, explore=False):
         means, log_stds, h_outs = self.actor(obs, prev_actions, actor_rnn_states)
         
         stds = log_stds.exp()
@@ -76,6 +76,7 @@ class R_MASACPolicy(RecurrentPolicy):
         else:
             actions = torch.tanh(means) * self.action_scale + self.action_bias
 
+        # scale log probs to maintain action bounds
         log_probs = normal.log_prob(x_t)
         log_probs -= torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
         log_probs = log_probs.sum(2, keepdim=True)
