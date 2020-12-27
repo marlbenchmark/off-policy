@@ -38,13 +38,7 @@ class MPERunner(RecRunner):
     # for mpe-simple_spread and mpe-simple_reference  
     @torch.no_grad() 
     def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
-        """
-        Collect a rollout in which all agents share the same policy weights. Used for the simple-spread and simple-reference envs.
 
-        :param explore: (bool) whether to use an exploration policy for rollout collection.
-        :param training_episode (bool) whether this episode contributes to the total number of training steps
-        :param warmup (bool): whether to collect episode with purely random actions
-        """
         env_info = {}
         # only 1 policy since all agents share weights
         p_id = "policy_0"
@@ -80,15 +74,12 @@ class MPERunner(RecRunner):
                                                             last_acts_batch,
                                                             rnn_states_batch)
             else:
-                if self.algorithm_name == "rmasac":
-                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch, last_acts_batch, rnn_states_batch, sample=explore)
-                else:
-                    # get actions with exploration noise (eps-greedy/Gaussian)
-                    acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
-                                                                        last_acts_batch,
-                                                                        rnn_states_batch,
-                                                                        t_env=self.total_env_steps,
-                                                                        explore=explore)
+                # get actions with exploration noise (eps-greedy/Gaussian)
+                acts_batch, rnn_states_batch, _ = policy.get_actions(obs_batch,
+                                                                    last_acts_batch,
+                                                                    rnn_states_batch,
+                                                                    t_env=self.total_env_steps,
+                                                                    explore=explore)
             acts_batch = acts_batch if isinstance(acts_batch, np.ndarray) else acts_batch.cpu().detach().numpy()
             # update rnn hidden state
             rnn_states_batch = rnn_states_batch if isinstance(rnn_states_batch, np.ndarray) else rnn_states_batch.cpu().detach().numpy()
