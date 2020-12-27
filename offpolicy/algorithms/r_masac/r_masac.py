@@ -57,7 +57,8 @@ class R_MASAC(RecurrentTrainer):
             else:
                 batched_avail_act_seq = None
             total_batch_size = batched_obs_seq.shape[1]
-            batch_size = total_batch_size // num_pol_agents            # no gradient tracking is necessary for target actions
+            batch_size = total_batch_size // num_pol_agents
+            # no gradient tracking is necessary for target actions
             with torch.no_grad():
                 # step target actor through the first actions
                 if isinstance(policy.act_dim, np.ndarray):
