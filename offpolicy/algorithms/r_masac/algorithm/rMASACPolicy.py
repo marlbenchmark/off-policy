@@ -145,17 +145,11 @@ class R_MASACPolicy(RecurrentPolicy):
 
         return random_actions
 
-    def init_hidden(self, num_agents, batch_size, use_numpy=False):
-        if use_numpy:
-            if num_agents == -1:
-                return np.zeros((batch_size, self.hidden_size), dtype=np.float32)
-            else:
-                return np.zeros((num_agents, batch_size, self.hidden_size), dtype=np.float32)
+    def init_hidden(self, num_agents, batch_size):
+        if num_agents == -1:
+            return torch.zeros(batch_size, self.hidden_size)
         else:
-            if num_agents == -1:
-                return torch.zeros(batch_size, self.hidden_size)
-            else:
-                return torch.zeros(num_agents, batch_size, self.hidden_size)
+            return torch.zeros(num_agents, batch_size, self.hidden_size)
 
     def soft_target_updates(self):
         # polyak updates to target networks
