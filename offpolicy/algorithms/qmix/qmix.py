@@ -107,7 +107,7 @@ class QMix(RecurrentTrainer):
             stacked_nobs_batch = torch.cat(list(curr_nobs_batch), dim=-2)
 
             if avail_act_batch[p_id] is not None:
-                curr_navail_act_batch = to_torch(avail_act_batch[p_id])
+                curr_navail_act_batch = to_torch(avail_act_batch[p_id])[:, 1:]
                 stacked_navail_act_batch = torch.cat(list(curr_navail_act_batch), dim=-2)
             else:
                 stacked_navail_act_batch = None
