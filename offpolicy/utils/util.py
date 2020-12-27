@@ -13,7 +13,7 @@ from torch.autograd import Variable
 def to_torch(input):
     return torch.from_numpy(input) if type(input) == np.ndarray else input
 
-def _t2n(x):
+def to_numpy(x):
     return x.detach().cpu().numpy()
 
 class FixedCategorical(torch.distributions.Categorical):

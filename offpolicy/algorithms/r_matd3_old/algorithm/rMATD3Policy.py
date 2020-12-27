@@ -5,7 +5,7 @@ from torch.distributions import OneHotCategorical
 
 from offpolicy.algorithms.r_matd3.algorithm.r_actor_critic import R_Actor, R_Critic
 from offpolicy.utils.util import get_state_dim, is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
-    gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, _t2n
+    gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, to_numpy
 
 
 class R_MATD3Policy:
@@ -80,7 +80,7 @@ class R_MATD3Policy:
                     # random actions sample uniformly from action space
                     random_actions = [OneHotCategorical(logits=torch.ones(batch_size, self.act_dim[i])).sample() for i in range(len(self.act_dim))]
                     random_actions = torch.cat(random_actions, dim=1)
-                    actions = (1 - take_random) * _t2n(onehot_actions) + take_random * _t2n(random_actions)
+                    actions = (1 - take_random) * to_numpy(onehot_actions) + take_random * to_numpy(random_actions)
                 else:
                     onehot_actions = list(map(onehot_from_logits, actor_out))
                     actions = torch.cat(onehot_actions, dim=-1)
@@ -98,7 +98,7 @@ class R_MATD3Policy:
                     logits = avail_choose(torch.ones(batch_size, self.act_dim), available_actions)
                     random_actions = OneHotCategorical(logits=logits).sample().numpy()
                     take_random = (rand_numbers < eps).astype(int)
-                    actions = (1 - take_random) * _t2n(onehot_actions) + take_random * random_actions
+                    actions = (1 - take_random) * to_numpy(onehot_actions) + take_random * random_actions
                 else:
                     actions = onehot_from_logits(actor_out, available_actions)  # no gradient
 

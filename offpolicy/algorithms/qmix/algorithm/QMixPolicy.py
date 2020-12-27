@@ -3,7 +3,7 @@ import torch
 from offpolicy.algorithms.qmix.algorithm.agent_q_function import AgentQFunction
 from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
 from torch.distributions import Categorical, OneHotCategorical
-from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, _t2n
+from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, to_numpy
 
 
 class QMixPolicy(RecurrentPolicy):
@@ -40,10 +40,6 @@ class QMixPolicy(RecurrentPolicy):
         Get q values for state action pair batch
         Prev_action_batch: batch_size x action_dim, rows are onehot is onehot row matrix, but action_batch is a nx1 vector (not onehot)
         """
-        if len(obs_batch.shape) == 3:
-            batch_size = obs_batch.shape[1]
-        else:
-            batch_size = obs_batch.shape[0]
 
         # combine previous action with observation for input into q, if specified in args
         if self.args.prev_act_inp:
@@ -111,7 +107,7 @@ class QMixPolicy(RecurrentPolicy):
                     # random actions sample uniformly from action space
                     random_action = Categorical(logits=torch.ones(batch_size, self.act_dim[i])).sample().numpy()
                     take_random = (rand_number < eps).astype(int)
-                    action = (1 - take_random) * _t2n(greedy_action) + take_random * random_action
+                    action = (1 - take_random) * to_numpy(greedy_action) + take_random * random_action
                     onehot_action = make_onehot(action, self.act_dim[i])
                 else:
                     greedy_Q = greedy_Q.unsqueeze(-1)
@@ -135,7 +131,7 @@ class QMixPolicy(RecurrentPolicy):
                 logits = avail_choose(torch.ones(batch_size, self.act_dim), available_actions)
                 random_actions = Categorical(logits=logits).sample().numpy()
                 take_random = (rand_numbers < eps).astype(int)
-                actions = (1 - take_random) * _t2n(greedy_actions) + take_random * random_actions
+                actions = (1 - take_random) * to_numpy(greedy_actions) + take_random * random_actions
                 onehot_actions = make_onehot(actions, self.act_dim)
             else:
                 greedy_Qs = greedy_Qs.unsqueeze(-1)

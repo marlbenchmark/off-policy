@@ -14,9 +14,9 @@ class RecurrentPolicy(ABC):
         :param t_env: (int) train step during which this function is called. Used to compute epsilon for eps-greedy exploration.
         :param explore: (bool) whether to return actions using an exploration policy.
 
-        :return: (torch.Tensor) computed actions
+        :return: (torch.Tensor / np.ndarray) computed actions (np.ndarray if explore is True, torch.Tensor else)
         :return: (torch.Tensor) updated RNN hidden states
-        :return: (torch.Tensor) additional informations, depending on algorithms (e.g. action entropy for RMASAC).
+        :return: (torch.Tensor) additional information, depending on algorithms (e.g. action entropy for RMASAC).
         """
         raise NotImplementedError
 

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from offpolicy.algorithms.mqmix.algorithm.agent_q_function import AgentQFunction
 from torch.distributions import Categorical, OneHotCategorical
-from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, _t2n
+from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, to_numpy
 
 
 class M_QMixPolicy:
@@ -77,7 +77,7 @@ class M_QMixPolicy:
                     # random actions sample uniformly from action space
                     random_action = Categorical(logits=torch.ones(batch_size, self.act_dim[i])).sample().numpy()
                     take_random = (rand_number < eps).astype(int)
-                    action = (1 - take_random) * _t2n(greedy_action) + take_random * random_action
+                    action = (1 - take_random) * to_numpy(greedy_action) + take_random * random_action
                     onehot_action = make_onehot(action, self.act_dim[i])
                 else:
                     greedy_Q = greedy_Q.unsqueeze(-1)
@@ -97,7 +97,7 @@ class M_QMixPolicy:
                 logits = avail_choose(torch.ones(batch_size, self.act_dim), available_actions)
                 random_actions = Categorical(logits=logits).sample().numpy()
                 take_random = (rand_numbers < eps).astype(int)
-                actions = (1 - take_random) * _t2n(greedy_actions) + take_random * random_actions
+                actions = (1 - take_random) * to_numpy(greedy_actions) + take_random * random_actions
                 onehot_actions = make_onehot(actions, self.act_dim)
             else:
                 greedy_Qs = greedy_Qs.unsqueeze(-1)
