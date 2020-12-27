@@ -275,8 +275,7 @@ class RecRunner(object):
             else:
                 sample = self.buffer.sample(self.batch_size)
 
-            train_info, new_priorities, idxes = self.trainer.train_policy_on_batch(
-                sample, self.use_same_share_obs, update_popart)
+            train_info, new_priorities, idxes = self.trainer.train_policy_on_batch(sample)
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)

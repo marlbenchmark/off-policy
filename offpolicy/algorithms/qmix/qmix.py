@@ -2,12 +2,13 @@ import torch
 import copy
 from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, to_torch
 from offpolicy.algorithms.qmix.algorithm.q_mixer import QMixer
+from offpolicy.algorithms.vdn.algorithm.vdn_mixer import VDNMixer
 from offpolicy.algorithms.common.recurrent_trainer import RecurrentTrainer
 from offpolicy.utils.popart import PopArt
 import numpy as np
 
 class QMix(RecurrentTrainer):
-    def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), episode_length=None):
+    def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), episode_length=None, vdn=False):
         """Class to do gradient updates"""
         self.args = args
         self.use_popart = self.args.use_popart
@@ -48,8 +49,11 @@ class QMix(RecurrentTrainer):
                                   len(self.policy_agents[p_id]) for p_id in self.policy_ids]
 
         # mixer network
-        self.mixer = QMixer(
-            args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
+        if vdn:
+            self.mixer = VDNMixer(args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
+        else:
+            self.mixer = QMixer(
+                args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
 
         # target policies/networks
         self.target_policies = {p_id: copy.deepcopy(self.policies[p_id]) for p_id in self.policy_ids}
@@ -70,18 +74,17 @@ class QMix(RecurrentTrainer):
         # unpack the batch
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
             dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
+            avail_act_batch, \
             importance_weights, idxes = batch
 
         if self.use_same_share_obs:
             cent_obs_batch = to_torch(cent_obs_batch[self.policy_ids[0]])
-            cent_nobs_batch = to_torch(cent_nobs_batch[self.policy_ids[0]])
+            cent_obs_batch, cent_nobs_batch = cent_obs_batch[:-1], cent_obs_batch[1:]
         else:
             choose_agent_id = 0
             cent_obs_batch = to_torch(cent_obs_batch[self.policy_ids[0]][choose_agent_id])
-            cent_nobs_batch = to_torch(cent_nobs_batch[self.policy_ids[0]][choose_agent_id])
+            cent_obs_batch, cent_nobs_batch = cent_obs_batch[:-1], cent_obs_batch[1:]
 
         dones_env_batch = to_torch(dones_env_batch[self.policy_ids[0]]).to(**self.tpdv)
 
@@ -94,17 +97,17 @@ class QMix(RecurrentTrainer):
         for p_id in self.policy_ids:
             # get data related to the policy id
             rewards = to_torch(rew_batch[p_id][0]).to(**self.tpdv)
-            curr_obs_batch = to_torch(obs_batch[p_id])
+            curr_obs_batch = to_torch(obs_batch[p_id])[:, :-1]
             curr_act_batch = to_torch(act_batch[p_id]).to(**self.tpdv)
-            curr_nobs_batch = to_torch(nobs_batch[p_id])
+            curr_nobs_batch = to_torch(obs_batch[p_id])[:, 1:]
 
             # stack over agents to process them all at once
             stacked_act_batch = torch.cat(list(curr_act_batch), dim=-2)
             stacked_obs_batch = torch.cat(list(curr_obs_batch), dim=-2)
             stacked_nobs_batch = torch.cat(list(curr_nobs_batch), dim=-2)
 
-            if navail_act_batch[p_id] is not None:
-                curr_navail_act_batch = to_torch(navail_act_batch[p_id])
+            if avail_act_batch[p_id] is not None:
+                curr_navail_act_batch = to_torch(avail_act_batch[p_id])
                 stacked_navail_act_batch = torch.cat(list(curr_navail_act_batch), dim=-2)
             else:
                 stacked_navail_act_batch = None
