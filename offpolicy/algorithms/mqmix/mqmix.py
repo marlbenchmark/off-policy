@@ -63,7 +63,7 @@ class M_QMix:
         obs_batch, cent_obs_batch, \
         act_batch, rew_batch, \
         nobs_batch, cent_nobs_batch, \
-        dones_batch, dones_env_batch, \
+        dones_batch, dones_env_batch, valid_transition_batch,\
         avail_act_batch, navail_act_batch, \
         importance_weights, idxes = batch
 

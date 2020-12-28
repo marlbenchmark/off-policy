@@ -79,11 +79,11 @@ class MASAC(Trainer):
 
     def shared_train_policy_on_batch(self, update_policy_id, batch):
         obs_batch, cent_obs_batch, \
-            act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
-            dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
+        act_batch, rew_batch, \
+        nobs_batch, cent_nobs_batch, \
+        dones_batch, dones_env_batch, valid_transition_batch,\
+        avail_act_batch, navail_act_batch, \
+        importance_weights, idxes = batch
 
         cent_act, replace_ind_start, cent_nact, avg_agent_nact_logprobs, update_agent_logprobs = self.get_update_info(
             update_policy_id, obs_batch, act_batch, nobs_batch, navail_act_batch)
@@ -168,11 +168,11 @@ class MASAC(Trainer):
                 sum_act_dim = int(sum(self.policies[p_id].act_dim))
             else:
                 sum_act_dim = self.policies[p_id].act_dim
-            for a_id in self.policy_agents[p_id]:
+            for _ in self.policy_agents[p_id]:
                 mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
-        done_mask = []
+        valid_trans_mask = []
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
             curr_mask_temp = copy.deepcopy(mask_temp)
@@ -188,12 +188,12 @@ class MASAC(Trainer):
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
             masks.append(curr_mask)
 
-            # agent dones
-            agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
-            done_mask.append(agent_done_batch)
+            # agent valid transitions
+            agent_valid_trans_batch = to_torch(valid_transition_batch[update_policy_id][i]).to(**self.tpdv)
+            valid_trans_mask.append(agent_valid_trans_batch)
         # cat to form into tensors
         mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
-        done_mask = torch.cat(done_mask, dim=0)
+        valid_trans_mask = torch.cat(valid_trans_mask, dim=0)
 
         pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
         if avail_act_batch[update_policy_id] is not None:
@@ -222,7 +222,7 @@ class MASAC(Trainer):
         actor_Q1, actor_Q2 = update_policy.critic(stacked_cent_obs, actor_update_cent_acts)
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = update_policy.alpha * pol_logprobs - actor_Q
-        actor_loss = (actor_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
+        actor_loss = (actor_loss * (valid_trans_mask)).sum() / (valid_trans_mask).sum()
 
         update_policy.actor_optimizer.zero_grad()
         update_policy.critic_optimizer.zero_grad()
@@ -242,7 +242,7 @@ class MASAC(Trainer):
             if alpha_loss.shape[-1] > 1:
                 alpha_loss = alpha_loss.mean(dim=-1).unsqueeze(-1)
 
-            alpha_loss = (alpha_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
+            alpha_loss = (alpha_loss * (valid_trans_mask)).sum() / (valid_trans_mask).sum()
 
             update_policy.alpha_optimizer.zero_grad()
             alpha_loss.backward()
@@ -270,11 +270,11 @@ class MASAC(Trainer):
 
     def cent_train_policy_on_batch(self, update_policy_id, batch):
         obs_batch, cent_obs_batch, \
-            act_batch, rew_batch, \
-            nobs_batch, cent_nobs_batch, \
-            dones_batch, dones_env_batch, \
-            avail_act_batch, navail_act_batch, \
-            importance_weights, idxes = batch
+        act_batch, rew_batch, \
+        nobs_batch, cent_nobs_batch, \
+        dones_batch, dones_env_batch, valid_transition_batch,\
+        avail_act_batch, navail_act_batch, \
+        importance_weights, idxes = batch
 
         cent_act, replace_ind_start, cent_nact, avg_agent_nact_logprobs, update_agent_logprobs = self.get_update_info(
             update_policy_id, obs_batch, act_batch, nobs_batch, navail_act_batch)
@@ -393,7 +393,7 @@ class MASAC(Trainer):
                 mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
-        done_mask = []
+        valid_trans_mask = []
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
             curr_mask_temp = copy.deepcopy(mask_temp)
@@ -409,12 +409,12 @@ class MASAC(Trainer):
             curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
             masks.append(curr_mask)
 
-            # agent dones
-            agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
-            done_mask.append(agent_done_batch)
+            # agent valid transitions
+            agent_valid_trans_batch = to_torch(valid_transition_batch[update_policy_id][i]).to(**self.tpdv)
+            valid_trans_mask.append(agent_valid_trans_batch)
         # cat to form into tensors
         mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
-        done_mask = torch.cat(done_mask, dim=0)
+        valid_trans_mask = torch.cat(valid_trans_mask, dim=0)
 
         pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
         if avail_act_batch[update_policy_id] is not None:
@@ -438,7 +438,7 @@ class MASAC(Trainer):
         pol_Q1, pol_Q2 = update_policy.critic(all_agent_cent_obs, actor_update_cent_acts)
         pol_Q = torch.min(pol_Q1, pol_Q2)
         actor_loss = update_policy.alpha * pol_logprobs - pol_Q
-        actor_loss = (actor_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
+        actor_loss = (actor_loss * (valid_trans_mask)).sum() / (valid_trans_mask).sum()
 
         update_policy.actor_optimizer.zero_grad()
         update_policy.critic_optimizer.zero_grad()
@@ -460,8 +460,8 @@ class MASAC(Trainer):
             if alpha_loss.shape[-1] > 1:
                 alpha_loss = alpha_loss.mean(dim=-1).unsqueeze(-1)
 
-            alpha_loss = alpha_loss * (1 - done_mask)
-            alpha_loss = alpha_loss.sum() / (1 - done_mask).sum()
+            alpha_loss = alpha_loss * (valid_trans_mask)
+            alpha_loss = alpha_loss.sum() / (valid_trans_mask).sum()
 
             update_policy.alpha_optimizer.zero_grad()
             alpha_loss.backward()

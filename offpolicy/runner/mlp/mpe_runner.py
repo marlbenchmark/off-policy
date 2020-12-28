@@ -1,14 +1,9 @@
-import os
 import wandb
 import numpy as np
 from itertools import chain
-from tensorboardX import SummaryWriter
 import torch
 import time
-
-from offpolicy.utils.mlp_buffer import MlpReplayBuffer, PrioritizedMlpReplayBuffer
-from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
-
+from offpolicy.utils.util import is_multidiscrete
 from offpolicy.runner.mlp.base_runner import MlpRunner
 
 class MPERunner(MlpRunner):
@@ -66,6 +61,7 @@ class MPERunner(MlpRunner):
         step_next_share_obs = {}
         step_dones = {}
         step_dones_env = {}
+        valid_transition = {}
         step_avail_acts = {}
         step_next_avail_acts = {}
 
@@ -109,6 +105,7 @@ class MPERunner(MlpRunner):
             step_next_share_obs[p_id] = next_share_obs
             step_dones[p_id] = np.zeros_like(dones)
             step_dones_env[p_id] = dones_env
+            valid_transition[p_id] = np.ones_like(dones)
             step_avail_acts[p_id] = None
             step_next_avail_acts[p_id] = None
 
@@ -128,6 +125,7 @@ class MPERunner(MlpRunner):
                                    step_next_share_obs,
                                    step_dones,
                                    step_dones_env,
+                                   valid_transition,
                                    step_avail_acts,
                                    step_next_avail_acts)
 
@@ -186,6 +184,7 @@ class MPERunner(MlpRunner):
         step_next_share_obs = {}
         step_dones = {}
         step_dones_env = {}
+        valid_transition = {}
         step_avail_acts = {}
         step_next_avail_acts = {}
 
@@ -259,6 +258,7 @@ class MPERunner(MlpRunner):
                 step_next_share_obs[p_id] = next_share_obs
                 step_dones[p_id] = np.zeros_like(np.expand_dims(dones[:, agent_id], axis=1))
                 step_dones_env[p_id] = dones_env
+                valid_transition[p_id] = np.ones_like(np.expand_dims(dones[:, agent_id], axis=1))
                 step_avail_acts[p_id] = None
                 step_next_avail_acts[p_id] = None
 
@@ -278,6 +278,7 @@ class MPERunner(MlpRunner):
                                    step_next_share_obs,
                                    step_dones,
                                    step_dones_env,
+                                   valid_transition,
                                    step_avail_acts,
                                    step_next_avail_acts)
 

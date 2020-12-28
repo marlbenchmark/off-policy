@@ -28,7 +28,7 @@ class MlpReplayBuffer(object):
         return self.policy_buffers['policy_0'].filled_i
 
     def insert(self, num_insert_steps, obs, share_obs, acts, rewards,
-               next_obs, next_share_obs, dones, dones_env,
+               next_obs, next_share_obs, dones, dones_env, valid_transition,
                avail_acts, next_avail_acts):
 
         for p_id in self.policy_info.keys():
@@ -36,19 +36,19 @@ class MlpReplayBuffer(object):
                                                          np.array(obs[p_id]), np.array(share_obs[p_id]), np.array(
                                                              acts[p_id]), np.array(rewards[p_id]),
                                                          np.array(next_obs[p_id]), np.array(next_share_obs[p_id]), np.array(
-                                                             dones[p_id]), np.array(dones_env[p_id]),
+                                                             dones[p_id]), np.array(dones_env[p_id]), np.array(valid_transition[p_id]),
                                                          np.array(avail_acts[p_id]), np.array(next_avail_acts[p_id]))
         return idx_range
 
     def sample(self, batch_size):
         inds = np.random.choice(len(self), batch_size)
-        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, avail_acts, next_avail_acts = {
-        }, {}, {}, {}, {}, {}, {}, {}, {}, {}
+        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts = {
+        }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
         for p_id in self.policy_info.keys():
             obs[p_id], share_obs[p_id], acts[p_id], rewards[p_id], next_obs[p_id], next_share_obs[p_id], dones[
-                p_id], dones_env[p_id], avail_acts[p_id], next_avail_acts[p_id] = self.policy_buffers[p_id].sample_inds(inds)
+                p_id], dones_env[p_id], valid_transition[p_id], avail_acts[p_id], next_avail_acts[p_id] = self.policy_buffers[p_id].sample_inds(inds)
 
-        return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, avail_acts, next_avail_acts, None, None
+        return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts, None, None
 
 
 class MlpPolicyBuffer(object):
@@ -101,16 +101,16 @@ class MlpPolicyBuffer(object):
         # default to done being True
         self.dones = np.ones_like(self.rewards, dtype=np.float32)
         self.dones_env = np.ones((self.buffer_size, 1), dtype=np.float32)
+        self.valid_transition = np.zeros_like(self.dones, dtype=np.float32)
 
     def __len__(self):
         return self.filled_i
 
     def insert(self, num_insert_steps, obs, share_obs, acts, rewards,
-               next_obs, next_share_obs, dones, dones_env,
+               next_obs, next_share_obs, dones, dones_env, valid_transition,
                avail_acts=None, next_avail_acts=None):
         # obs: [step, episode, agent, dim]
-        episode_length = obs.shape[0]
-        assert episode_length == num_insert_steps, ("different size!")
+        assert obs.shape[0] == num_insert_steps, ("different size!")
 
         if self.current_i + num_insert_steps <= self.buffer_size:
             idx_range = np.arange(self.current_i, self.current_i + num_insert_steps)       
@@ -126,6 +126,7 @@ class MlpPolicyBuffer(object):
         self.next_share_obs[idx_range] = next_share_obs.copy()
         self.dones[idx_range] = dones.copy()
         self.dones_env[idx_range] = dones_env.copy()
+        self.valid_transition[idx_range] = valid_transition.copy()
         if self.use_avail_acts:
             self.avail_acts[idx_range] = avail_acts.copy()
             self.next_avail_acts[idx_range] = next_avail_acts.copy()
@@ -139,7 +140,6 @@ class MlpPolicyBuffer(object):
 
         obs = _cast(self.obs[sample_inds])
         acts = _cast(self.acts[sample_inds])
-        rewards = _cast(self.rewards[sample_inds])
         if self.use_reward_normalization:
             mean_reward = self.rewards[:self.filled_i].mean()
             std_reward = self.rewards[:self.filled_i].std()
@@ -159,6 +159,7 @@ class MlpPolicyBuffer(object):
 
         dones = _cast(self.dones[sample_inds])
         dones_env = self.dones_env[sample_inds]
+        valid_transition = _cast(self.valid_transition[sample_inds])
 
         if self.use_avail_acts:
             avail_acts = _cast(self.avail_acts[sample_inds])
@@ -167,7 +168,7 @@ class MlpPolicyBuffer(object):
             avail_acts = None
             next_avail_acts = None
 
-        return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, avail_acts, next_avail_acts
+        return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts
 
 
 class PrioritizedMlpReplayBuffer(MlpReplayBuffer):
@@ -187,10 +188,10 @@ class PrioritizedMlpReplayBuffer(MlpReplayBuffer):
         self.max_priorities = {p_id: 1.0 for p_id in self.policy_info.keys()}
 
     def insert(self, num_insert_steps, obs, share_obs, acts, rewards,
-               next_obs, next_share_obs, dones, dones_env,
+               next_obs, next_share_obs, dones, dones_env, valid_transition,
                avail_acts=None, next_avail_acts=None):
         idx_range = super().insert(num_insert_steps, obs, share_obs, acts, rewards,
-                                   next_obs, next_share_obs, dones, dones_env,
+                                   next_obs, next_share_obs, dones, dones_env, valid_transition,
                                    avail_acts, next_avail_acts)
         for idx in range(idx_range[0], idx_range[1]):
             for p_id in self.policy_info.keys():
@@ -213,20 +214,19 @@ class PrioritizedMlpReplayBuffer(MlpReplayBuffer):
 
         batch_inds = self._sample_proportional(batch_size, p_id)
 
-        weights = []
         p_min = self._it_mins[p_id].min() / self._it_sums[p_id].sum()
         max_weight = (p_min * len(self)) ** (-beta)
         p_sample = self._it_sums[p_id][batch_inds] / self._it_sums[p_id].sum()
         weights = (p_sample * len(self)) ** (-beta) / max_weight
 
-        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, avail_acts, next_avail_acts = {
-        }, {}, {}, {}, {}, {}, {}, {}, {}, {}
+        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts = {
+        }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
         for p_id in self.policy_info.keys():
             p_buffer = self.policy_buffers[p_id]
             obs[p_id], share_obs[p_id], acts[p_id], rewards[p_id], next_obs[p_id], next_share_obs[p_id], dones[
-                p_id], dones_env[p_id], avail_acts[p_id], next_avail_acts[p_id] = p_buffer.sample_inds(batch_inds)
+                p_id], dones_env[p_id], valid_transition[p_id], avail_acts[p_id], next_avail_acts[p_id] = p_buffer.sample_inds(batch_inds)
 
-        return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, avail_acts, next_avail_acts, weights, batch_inds
+        return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts, weights, batch_inds
 
     def update_priorities(self, idxes, priorities, p_id=None):
         """

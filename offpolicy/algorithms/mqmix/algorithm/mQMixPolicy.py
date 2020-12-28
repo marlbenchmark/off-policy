@@ -81,7 +81,7 @@ class M_QMixPolicy(MLPPolicy):
                     onehot_action = make_onehot(action, self.act_dim[i])
                 else:
                     greedy_Q = greedy_Q.unsqueeze(-1)
-                    onehot_action = make_onehot(greedy_action, self.act_dim[i], seq_len=seq_len)
+                    onehot_action = make_onehot(greedy_action, self.act_dim[i])
 
                 onehot_actions.append(onehot_action)
                 greedy_Qs.append(greedy_Q)

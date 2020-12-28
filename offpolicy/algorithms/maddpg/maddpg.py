@@ -76,7 +76,7 @@ class MADDPG(Trainer):
         obs_batch, cent_obs_batch, \
         act_batch, rew_batch, \
         nobs_batch, cent_nobs_batch, \
-        dones_batch, dones_env_batch, \
+        dones_batch, dones_env_batch, valid_transition_batch,\
         avail_act_batch, navail_act_batch, \
         importance_weights, idxes = batch
 
@@ -162,7 +162,7 @@ class MADDPG(Trainer):
                     mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
             masks = []
-            done_mask = []
+            valid_trans_mask = []
             # need to iterate through agents, but only formulate masks at each step
             for i in range(num_update_agents):
                 curr_mask_temp = copy.deepcopy(mask_temp)
@@ -178,12 +178,12 @@ class MADDPG(Trainer):
                 curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
                 masks.append(curr_mask)
 
-                # agent dones
-                agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
-                done_mask.append(agent_done_batch)
+                # agent valid transitions
+                agent_valid_trans_batch = to_torch(valid_transition_batch[update_policy_id][i]).to(**self.tpdv)
+                valid_trans_mask.append(agent_valid_trans_batch)
             # cat to form into tensors
             mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
-            done_mask = torch.cat(done_mask, dim=0)
+            valid_trans_mask = torch.cat(valid_trans_mask, dim=0)
             pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
             if avail_act_batch[update_policy_id] is not None:
                 pol_agents_avail_act_batch = np.concatenate(avail_act_batch[update_policy_id], axis=0)
@@ -212,8 +212,8 @@ class MADDPG(Trainer):
             actor_Qs = update_policy.critic(stacked_cent_obs, actor_update_cent_acts)
             # use only the first Q output for actor loss
             actor_Qs = actor_Qs[0]
-            actor_Qs = actor_Qs * (1 - done_mask)
-            actor_loss = -(actor_Qs).sum() / (1 - done_mask).sum()
+            actor_Qs = actor_Qs * valid_trans_mask
+            actor_loss = -(actor_Qs).sum() / (valid_trans_mask).sum()
 
             update_policy.critic_optimizer.zero_grad()
             update_policy.actor_optimizer.zero_grad()
@@ -236,7 +236,7 @@ class MADDPG(Trainer):
         obs_batch, cent_obs_batch, \
         act_batch, rew_batch, \
         nobs_batch, cent_nobs_batch, \
-        dones_batch, dones_env_batch, \
+        dones_batch, dones_env_batch, valid_transition_batch,\
         avail_act_batch, navail_act_batch, \
         importance_weights, idxes = batch
 
@@ -252,6 +252,7 @@ class MADDPG(Trainer):
         rewards = rew_batch[update_policy_id][0]
         dones_env = dones_env_batch[update_policy_id]
         dones = dones_batch[update_policy_id]
+        valid_trans = valid_transition_batch[update_policy_id]
 
         update_policy = self.policies[update_policy_id]
         batch_size = obs_batch[update_policy_id].shape[1]
@@ -271,7 +272,7 @@ class MADDPG(Trainer):
         update_policy.critic_optimizer.zero_grad()
         all_agent_rewards = to_torch(all_agent_rewards).to(**self.tpdv).reshape(-1, 1)
         all_env_dones = to_torch(all_env_dones).to(**self.tpdv).reshape(-1, 1)
-        all_agent_dones = to_torch(dones).to(**self.tpdv).reshape(-1, 1)
+        all_agent_valid_trans = to_torch(valid_trans).to(**self.tpdv).reshape(-1, 1)
         # critic update
         with torch.no_grad():
             next_step_Q = update_policy.target_critic(all_agent_cent_nobs, all_agent_cent_nact).reshape(-1, 1)
@@ -294,7 +295,7 @@ class MADDPG(Trainer):
             # weight each loss element by their importance sample weight
             critic_loss = critic_loss * agent_importance_weights
             if self.use_value_active_masks:
-                critic_loss = (critic_loss.view(-1, 1) * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
+                critic_loss = (critic_loss.view(-1, 1) * (all_agent_valid_trans)).sum() / (all_agent_valid_trans).sum()
             else:
                 critic_loss = critic_loss.mean()
             # new priorities are TD error
@@ -307,7 +308,7 @@ class MADDPG(Trainer):
                 critic_loss = mse_loss(error)
 
             if self.use_value_active_masks:
-                critic_loss = (critic_loss * (1 - all_agent_dones)).sum() / (1 - all_agent_dones).sum()
+                critic_loss = (critic_loss * (all_agent_valid_trans)).sum() / (all_agent_valid_trans).sum()
             else:
                 critic_loss = critic_loss.mean()
             new_priorities = None
@@ -338,7 +339,7 @@ class MADDPG(Trainer):
                     mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
             masks = []
-            done_mask = []
+            valid_trans_mask = []
             # need to iterate through agents, but only formulate masks at each step
             for i in range(num_update_agents):
                 curr_mask_temp = copy.deepcopy(mask_temp)
@@ -354,12 +355,12 @@ class MADDPG(Trainer):
                 curr_mask = np.tile(curr_mask_vec, (batch_size, 1))
                 masks.append(curr_mask)
 
-                # agent dones
-                agent_done_batch = to_torch(dones_batch[update_policy_id][i]).to(**self.tpdv)
-                done_mask.append(agent_done_batch)
+                # agent valid transitions
+                agent_valid_trans_batch = to_torch(valid_transition_batch[update_policy_id][i]).to(**self.tpdv)
+                valid_trans_mask.append(agent_valid_trans_batch)
             # cat to form into tensors
             mask = to_torch(np.concatenate(masks)).to(**self.tpdv)
-            done_mask = torch.cat(done_mask, dim=0)
+            valid_trans_mask = torch.cat(valid_trans_mask, dim=0)
 
             pol_agents_obs_batch = np.concatenate(obs_batch[update_policy_id], axis=0)
             if avail_act_batch[update_policy_id] is not None:
@@ -382,8 +383,8 @@ class MADDPG(Trainer):
             actor_update_cent_acts = mask * actor_cent_acts + (1 - mask) * to_torch(all_agent_cent_act_buffer).to(**self.tpdv)
             actor_Qs = update_policy.critic(all_agent_cent_obs, actor_update_cent_acts)
             # actor_loss = -actor_Qs.mean()
-            actor_Qs = actor_Qs * (1 - done_mask)
-            actor_loss = -(actor_Qs).sum() / (1 - done_mask).sum()
+            actor_Qs = actor_Qs * valid_trans_mask
+            actor_loss = -(actor_Qs).sum() / (valid_trans_mask).sum()
 
             update_policy.critic_optimizer.zero_grad()
             update_policy.actor_optimizer.zero_grad()
