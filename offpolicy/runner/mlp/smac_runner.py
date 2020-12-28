@@ -112,7 +112,7 @@ class SMACRunner(MlpRunner):
             step_next_share_obs[p_id] = next_share_obs
             step_dones[p_id] = dones
             step_dones_env[p_id] = dones_env
-            valid_transition[p_id] = agent_deaths
+            valid_transition[p_id] = 1 - agent_deaths
             step_avail_acts[p_id] = avail_acts
             step_next_avail_acts[p_id] = next_avail_acts
 
