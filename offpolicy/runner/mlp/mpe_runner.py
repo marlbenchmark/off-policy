@@ -12,7 +12,7 @@ class MPERunner(MlpRunner):
         self.collecter = self.shared_collect_rollout if self.share_policy else self.separated_collect_rollout
         # fill replay buffer with random actions
         self.finish_first_train_reset = False
-        num_warmup_episodes = max((self.batch_size/self.episode_length, self.args.num_random_episodes))
+        num_warmup_episodes = max((int(self.batch_size//self.episode_length) + 1, self.args.num_random_episodes))
         self.warmup(num_warmup_episodes)
         self.start = time.time()
         self.log_clear()
