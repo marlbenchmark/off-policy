@@ -1,13 +1,6 @@
-import os
-import wandb
 import numpy as np
-from itertools import chain
-from tensorboardX import SummaryWriter
 import torch
 import time
-
-from offpolicy.utils.mlp_buffer import MlpReplayBuffer, PrioritizedMlpReplayBuffer
-from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
 
 from offpolicy.runner.mlp.base_runner import MlpRunner
 
@@ -39,6 +32,7 @@ class SMACRunner(MlpRunner):
 
     
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        assert self.share_policy, "SC2 does not support individual agent policies currently!"
         env_info = {}
         p_id = "policy_0"
         policy = self.policies[p_id]
@@ -58,6 +52,7 @@ class SMACRunner(MlpRunner):
                 self.finish_first_train_reset = True
 
         # init
+        agent_deaths = np.zeros((self.num_envs, self.num_agents, 1))
         episode_rewards = []
         step_obs = {}
         step_share_obs = {}
@@ -67,6 +62,7 @@ class SMACRunner(MlpRunner):
         step_next_share_obs = {}
         step_dones = {}
         step_dones_env = {}
+        valid_transition = {}
         step_avail_acts = {}
         step_next_avail_acts = {}
 
@@ -94,7 +90,6 @@ class SMACRunner(MlpRunner):
 
             episode_rewards.append(rewards)
             dones_env = np.all(dones, axis=1)
-            dones[dones_env == True] = np.zeros(((dones_env == True).sum(), len(self.policy_agents[p_id]), 1), dtype=np.float32)
 
             if explore and n_rollout_threads == 1 and np.all(dones_env):
                 next_obs, next_share_obs, next_avail_acts = env.reset()
@@ -117,12 +112,14 @@ class SMACRunner(MlpRunner):
             step_next_share_obs[p_id] = next_share_obs
             step_dones[p_id] = dones
             step_dones_env[p_id] = dones_env
+            valid_transition[p_id] = agent_deaths
             step_avail_acts[p_id] = avail_acts
             step_next_avail_acts[p_id] = next_avail_acts
 
             obs = next_obs
             share_obs = next_share_obs
             avail_acts = next_avail_acts
+            agent_deaths = dones
 
             if explore:
                 self.obs = obs
@@ -137,6 +134,7 @@ class SMACRunner(MlpRunner):
                                    step_next_share_obs,
                                    step_dones,
                                    step_dones_env,
+                                   valid_transition,
                                    step_avail_acts,
                                    step_next_avail_acts)
             # train

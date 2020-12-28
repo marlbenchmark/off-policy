@@ -191,7 +191,7 @@ def gumbel_softmax_sample(logits, avail_logits, temperature, device=torch.device
                                           tens_type=type(logits.data))).cuda()
 
     dim = len(logits.shape) - 1
-    if avail_logits != None:
+    if avail_logits is not None:
         avail_logits = to_torch(avail_logits).to(device)
         y[avail_logits==0] = -1e10
     return F.softmax(y / temperature, dim=dim)

@@ -33,7 +33,6 @@ class MlpRunner(object):
         self.hidden_size = self.args.hidden_size
         self.use_soft_update = self.args.use_soft_update
         self.hard_update_interval = self.args.hard_update_interval
-        self.actor_train_interval_step = self.args.actor_train_interval_step
         self.train_interval = self.args.train_interval
         self.use_eval = self.args.use_eval
         self.eval_interval = self.args.eval_interval
@@ -97,11 +96,9 @@ class MlpRunner(object):
             from offpolicy.algorithms.matd3.algorithm.MATD3Policy import MATD3Policy as Policy
             from offpolicy.algorithms.matd3.matd3 import MATD3 as TrainAlgo
         elif self.algorithm_name == "maddpg":
-            assert self.actor_train_interval_step == 1, ("maddpg only support actor_train_interval_step=1.")
             from offpolicy.algorithms.maddpg.algorithm.MADDPGPolicy import MADDPGPolicy as Policy
             from offpolicy.algorithms.maddpg.maddpg import MADDPG as TrainAlgo
         elif self.algorithm_name == "masac":
-            assert self.actor_train_interval_step == 1, ("masac only support actor_train_interval_step=1.")
             from offpolicy.algorithms.masac.algorithm.MASACPolicy import MASACPolicy as Policy
             from offpolicy.algorithms.masac.masac import MASAC as TrainAlgo
         elif self.algorithm_name == "mqmix":
