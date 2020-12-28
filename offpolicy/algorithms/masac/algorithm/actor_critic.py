@@ -1,9 +1,5 @@
-import copy
-import numpy as np
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.mlp import MLPBase
@@ -12,11 +8,10 @@ from offpolicy.algorithms.utils.act import ACTLayer
 # constants used in baselines implementation, might need to change
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
-epsilon = 1e-6
 
-class Critic(nn.Module):
+class MASAC_Critic(nn.Module):
     def __init__(self, args, central_obs_dim, central_act_dim, device):
-        super(Critic, self).__init__()
+        super(MASAC_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
         self.device = device
@@ -50,10 +45,10 @@ class Critic(nn.Module):
 
         return q1_value, q2_value
 
-class DiscreteActor(nn.Module):
+class MASAC_Discrete_Actor(nn.Module):
 
     def __init__(self, args, obs_dim, act_dim, device):
-        super(DiscreteActor, self).__init__()
+        super(MASAC_Discrete_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size
@@ -77,9 +72,9 @@ class DiscreteActor(nn.Module):
 
         return action_logits
 
-class GaussianActor(nn.Module):
+class MASAC_Gaussian_Actor(nn.Module):
     def __init__(self, args, obs_dim, act_dim, action_space, device):
-        super(GaussianActor, self).__init__()
+        super(MASAC_Gaussian_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size

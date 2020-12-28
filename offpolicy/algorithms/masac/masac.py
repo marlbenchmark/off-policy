@@ -4,8 +4,9 @@ import copy
 import itertools
 from offpolicy.utils.util import huber_loss, mse_loss, to_torch
 from offpolicy.utils.popart import PopArt
+from offpolicy.algorithms.common.trainer import Trainer
 
-class MASAC:
+class MASAC(Trainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=None):
         """Contains all policies and does policy updates"""
         self.args = args
@@ -26,6 +27,7 @@ class MASAC:
             self.policies.keys()}
         if self.use_popart:
             self.value_normalizer = {policy_id: PopArt(1) for policy_id in self.policies.keys()}
+        self.use_same_share_obs = self.args.use_same_share_obs
 
     def get_update_info(self, update_policy_id, obs_batch, act_batch, nobs_batch, navail_act_batch):
         cent_act = []
@@ -69,7 +71,13 @@ class MASAC:
 
         return cent_act, replace_ind_start, cent_nact, all_agent_nact_logprobs, update_agent_logprobs
 
-    def shared_train_policy_on_batch(self, update_policy_id, batch, update_actor=None):
+    def train_policy_on_batch(self, update_policy_id, batch):
+        if self.use_same_share_obs:
+            return self.shared_train_policy_on_batch(update_policy_id, batch)
+        else:
+            return self.cent_train_policy_on_batch(update_policy_id, batch)
+
+    def shared_train_policy_on_batch(self, update_policy_id, batch):
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
             nobs_batch, cent_nobs_batch, \
@@ -257,10 +265,10 @@ class MASAC:
         train_info['actor_grad_norm'] = actor_grad_norm
         train_info['alpha'] = update_policy.alpha
         train_info['entropy'] = entropy
-
+        train_info['update_actor'] = True
         return train_info, new_priorities, idxes
 
-    def cent_train_policy_on_batch(self, update_policy_id, batch, update_actor=None):
+    def cent_train_policy_on_batch(self, update_policy_id, batch):
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
             nobs_batch, cent_nobs_batch, \
@@ -476,6 +484,7 @@ class MASAC:
         train_info['actor_grad_norm'] = actor_grad_norm
         train_info['alpha'] = update_policy.alpha
         train_info['entropy'] = entropy
+        train_info['update_actor'] = True
 
         return train_info, new_priorities, idxes
 

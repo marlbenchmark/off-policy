@@ -1,11 +1,13 @@
 import torch
 import numpy as np
-from torch.distributions import OneHotCategorical
-from offpolicy.algorithms.masac.algorithm.actor_critic import GaussianActor, DiscreteActor, Critic
-from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, soft_update, hard_update, onehot_from_logits, make_onehot, avail_choose, MultiDiscrete
+from torch.distributions import OneHotCategorical, Normal
+from offpolicy.algorithms.common.mlp_policy import MLPPolicy
+from offpolicy.algorithms.masac.algorithm.actor_critic import MASAC_Gaussian_Actor, MASAC_Discrete_Actor, MASAC_Critic
+from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, soft_update, hard_update, onehot_from_logits, gumbel_softmax, avail_choose
 
+EPS = 1e-6
 
-class MASACPolicy:
+class MASACPolicy(MLPPolicy):
     def __init__(self, config, policy_config, train=True):
 
         self.config = config
@@ -28,19 +30,19 @@ class MASACPolicy:
         self.multidiscrete = is_multidiscrete(self.act_space)
 
         if self.discrete:
-            self.actor = DiscreteActor(self.args, self.obs_dim, self.act_dim, self.device)
+            self.actor = MASAC_Discrete_Actor(self.args, self.obs_dim, self.act_dim, self.device)
             # slightly less than max possible entropy
             self.target_entropy = -np.log((1.0 / self.act_dim)) * self.target_entropy_coef # ! check this 
         else:
-            self.actor = GaussianActor(self.args, self.obs_dim, self.act_dim, self.device)
+            self.actor = MASAC_Gaussian_Actor(self.args, self.obs_dim, self.act_dim, self.device)
             # max possible entropy
             self.target_entropy = -torch.prod(torch.Tensor(self.act_space.shape)).item()
             # SAC rescaling to respect action bounds (see paper)
             self.action_scale = torch.tensor((self.act_space.high - self.act_space.low) / 2.).float()
             self.action_bias = torch.tensor((self.act_space.high + self.act_space.low) / 2.).float()
 
-        self.critic = Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
-        self.target_critic = Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.critic = MASAC_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.target_critic = MASAC_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
         # sync the target weights
         self.target_critic.load_state_dict(self.critic.state_dict())
 
@@ -59,12 +61,11 @@ class MASACPolicy:
         if self.discrete:
             actions, log_probs =self.get_actions_discrete(obs, available_actions, explore)
         else:
-            actions, log_probs = self.get_actions_continuous(obs, available_actions, explore, use_gumbel)
+            actions, log_probs = self.get_actions_continuous(obs, explore=explore)
 
         return actions, log_probs
 
     def get_actions_discrete(self, obs, available_actions=None, explore=False, use_gumbel=False):
-        # TODO: review this method
         act_logits = self.actor(obs)
 
         if self.multidiscrete:
@@ -108,8 +109,8 @@ class MASACPolicy:
 
         return actions, dist_entropies
 
-    def get_actions_continuous(self, obs):
-        mean, log_std = self.forward(obs)
+    def get_actions_continuous(self, obs, explore=False):
+        mean, log_std = self.actor(obs)
 
         std = log_std.exp()
         normal = Normal(mean, std)
@@ -123,7 +124,7 @@ class MASACPolicy:
 
         log_prob = normal.log_prob(x_t)
         # Enforcing Action Bound
-        log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
+        log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + EPS)
         log_prob = log_prob.sum(1, keepdim=True)
 
         return action, log_prob
