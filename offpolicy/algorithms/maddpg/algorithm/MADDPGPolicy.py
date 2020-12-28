@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from torch.distributions import OneHotCategorical
 from offpolicy.algorithms.maddpg.algorithm.actor_critic import MADDPG_Actor, MADDPG_Critic
+from offpolicy.algorithms.matd3.algorithm.actor_critic import MATD3_Actor, MATD3_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, to_numpy
 
@@ -27,11 +28,14 @@ class MADDPGPolicy:
         self.act_dim = get_dim_from_space(self.act_space)
         self.target_noise = target_noise
 
-        self.actor = MADDPG_Actor(self.args, self.obs_dim, self.act_dim, self.device)
-        self.critic = MADDPG_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        actor_class = MATD3_Actor if td3 else MADDPG_Actor
+        critic_class = MATD3_Critic if td3 else MADDPG_Critic
 
-        self.target_actor = MADDPG_Actor(self.args, self.obs_dim, self.act_dim, self.device)
-        self.target_critic = MADDPG_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.actor = actor_class(self.args, self.obs_dim, self.act_dim, self.device)
+        self.critic = critic_class(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+
+        self.target_actor = actor_class(self.args, self.obs_dim, self.act_dim, self.device)
+        self.target_critic = critic_class(self.args, self.central_obs_dim, self.central_act_dim, self.device)
 
         # sync the target weights
         self.target_actor.load_state_dict(self.actor.state_dict())
