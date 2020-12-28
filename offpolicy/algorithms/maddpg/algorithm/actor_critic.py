@@ -1,14 +1,12 @@
 import torch
 import torch.nn as nn
-import copy
-import numpy as np
 from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.mlp import MLPBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
-class Actor(nn.Module):
+class MADDPG_Actor(nn.Module):
     def __init__(self, args, obs_dim, act_dim, device):
-        super(Actor, self).__init__()
+        super(MADDPG_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size
@@ -34,9 +32,9 @@ class Actor(nn.Module):
         return action
 
 
-class Critic(nn.Module):
-    def __init__(self, args, central_obs_dim, central_act_dim, device):
-        super(Critic, self).__init__()
+class MADDPG_Critic(nn.Module):
+    def __init__(self, args, central_obs_dim, central_act_dim, device, num_q_outs=1):
+        super(MADDPG_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
         self.device = device
@@ -49,7 +47,7 @@ class Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
-        self.q_out = init_(nn.Linear(self.hidden_size, 1))
+        self.q_outs = [init_(nn.Linear(self.hidden_size, 1)) for _ in range(num_q_outs)]
         
         self.to(device)
 
@@ -61,6 +59,6 @@ class Critic(nn.Module):
         x = torch.cat([central_obs, central_act], dim=1)
 
         x = self.mlp(x)
-        q_value = self.q_out(x)
+        q_values = [q_out(x) for q_out in self.q_outs]
 
-        return q_value
+        return q_values

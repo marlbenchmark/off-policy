@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.distributions import Normal, OneHotCategorical
-from offpolicy.algorithms.r_masac.algorithm.r_actor_critic import R_GaussianActor, R_DiscreteActor, R_Critic
+from offpolicy.algorithms.r_masac.algorithm.r_actor_critic import R_MASAC_Gaussian_Actor, R_MASAC_Discrete_Actor, R_MASAC_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, avail_choose
 from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
@@ -29,19 +29,19 @@ class R_MASACPolicy(RecurrentPolicy):
         self.multidiscrete = is_multidiscrete(self.act_space)
 
         if self.discrete:
-            self.actor = R_DiscreteActor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
+            self.actor = R_MASAC_Discrete_Actor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
             # set target entropy to a fraction of the max entropy; fraction is determined by target_entropy_coef
             self.target_entropy = -np.log((1.0 / self.act_dim)) * self.target_entropy_coef
         else:
-            self.actor = R_GaussianActor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
+            self.actor = R_MASAC_Gaussian_Actor(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
             # max possible entropy
             self.target_entropy = -torch.prod(torch.Tensor(self.act_space.shape)).item()
             # SAC rescaling to respect action bounds
             self.action_scale = torch.tensor((self.act_space.high - self.act_space.low) / 2.).float()
             self.action_bias = torch.tensor((self.act_space.high + self.act_space.low) / 2.).float()
 
-        self.critic = R_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
-        self.target_critic = R_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.critic = R_MASAC_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.target_critic = R_MASAC_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
         # sync the target weights
         self.target_critic.load_state_dict(self.critic.state_dict())
 

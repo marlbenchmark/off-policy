@@ -8,10 +8,10 @@ from offpolicy.algorithms.utils.act import ACTLayer
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
 
-class R_Critic(nn.Module):
+class R_MASAC_Critic(nn.Module):
     """Centralized critic class."""
     def __init__(self, args, central_obs_dim, central_act_dim, device):
-        super(R_Critic, self).__init__()
+        super(R_MASAC_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
         self.device = device
@@ -62,10 +62,10 @@ class R_Critic(nn.Module):
         return q1_values, q2_values, h_final
 
 
-class R_DiscreteActor(nn.Module):
+class R_MASAC_Discrete_Actor(nn.Module):
     """Actor class for discrete action space."""
     def __init__(self, args, obs_dim, act_dim, device, take_prev_action=False):
-        super(R_DiscreteActor, self).__init__()
+        super(R_MASAC_Discrete_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size
@@ -112,10 +112,10 @@ class R_DiscreteActor(nn.Module):
         return act_outs, h_final
 
 
-class R_GaussianActor(nn.Module):
+class R_MASAC_Gaussian_Actor(nn.Module):
     """Actor class for continuous action space."""
     def __init__(self, args, obs_dim, act_dim, device, take_prev_action=False):
-        super(R_GaussianActor, self).__init__()
+        super(R_MASAC_Gaussian_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size

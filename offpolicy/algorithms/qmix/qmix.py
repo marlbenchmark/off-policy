@@ -3,11 +3,11 @@ import copy
 from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, to_torch
 from offpolicy.algorithms.qmix.algorithm.q_mixer import QMixer
 from offpolicy.algorithms.vdn.algorithm.vdn_mixer import VDNMixer
-from offpolicy.algorithms.common.recurrent_trainer import RecurrentTrainer
+from offpolicy.algorithms.common.trainer import Trainer
 from offpolicy.utils.popart import PopArt
 import numpy as np
 
-class QMix(RecurrentTrainer):
+class QMix(Trainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), episode_length=None, vdn=False):
         """Class to do gradient updates"""
         self.args = args

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class RecurrentTrainer(ABC):
+class Trainer(ABC):
     """Abstract trainer class. Performs gradient updates to policies.."""
 
     @abstractmethod

@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
-import copy
-import numpy as np
 from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.rnn import RNNBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
-class R_Actor(nn.Module):
+class R_MADDPG_Actor(nn.Module):
+    """Actor network class for R_MADDPG."""
     def __init__(self, args, obs_dim, act_dim, device, take_prev_action=False):
-        super(R_Actor, self).__init__()
+        super(R_MADDPG_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
         self.hidden_size = args.hidden_size
@@ -54,9 +53,9 @@ class R_Actor(nn.Module):
         return act_outs, h_final
 
 
-class R_Critic(nn.Module):
+class R_MADDPG_Critic(nn.Module):
     def __init__(self, args, central_obs_dim, central_act_dim, device, num_q_outs=1):
-        super(R_Critic, self).__init__()
+        super(R_MADDPG_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
         self.device = device

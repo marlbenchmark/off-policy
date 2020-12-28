@@ -1,13 +1,13 @@
 import torch
 import numpy as np
 from torch.distributions import OneHotCategorical
-from offpolicy.algorithms.maddpg.algorithm.actor_critic import Actor, Critic
-from offpolicy.utils.util import get_state_dim, is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
+from offpolicy.algorithms.maddpg.algorithm.actor_critic import MADDPG_Actor, MADDPG_Critic
+from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, to_numpy
 
 
 class MADDPGPolicy:
-    def __init__(self, config, policy_config, train=True):
+    def __init__(self, config, policy_config, target_noise=None, td3=False, train=True):
 
         self.config = config
         self.device = config['device']
@@ -25,12 +25,13 @@ class MADDPGPolicy:
         self.multidiscrete = is_multidiscrete(self.act_space)
 
         self.act_dim = get_dim_from_space(self.act_space)
+        self.target_noise = target_noise
 
-        self.actor = Actor(self.args, self.obs_dim, self.act_dim, self.device)
-        self.critic = Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.actor = MADDPG_Actor(self.args, self.obs_dim, self.act_dim, self.device)
+        self.critic = MADDPG_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
 
-        self.target_actor = Actor(self.args, self.obs_dim, self.act_dim, self.device)
-        self.target_critic = Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
+        self.target_actor = MADDPG_Actor(self.args, self.obs_dim, self.act_dim, self.device)
+        self.target_critic = MADDPG_Critic(self.args, self.central_obs_dim, self.central_act_dim, self.device)
 
         # sync the target weights
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -56,7 +57,7 @@ class MADDPGPolicy:
 
         if self.discrete:
             if self.multidiscrete:
-                if use_gumbel:
+                if use_gumbel or (use_target and self.target_noise is not None):
                     onehot_actions = list(map(lambda a: gumbel_softmax(a, hard=True, device=self.device), actor_out))
                     actions = torch.cat(onehot_actions, dim=-1)
                 elif explore:
@@ -75,7 +76,7 @@ class MADDPGPolicy:
                     actions = torch.cat(onehot_actions, dim=-1)
   
             else:
-                if use_gumbel:
+                if use_gumbel or (use_target and self.target_noise is not None):
                     actions = gumbel_softmax(actor_out, available_actions, hard=True, device=self.device)  # gumbel has a gradient 
                 elif explore:
                     onehot_actions = gumbel_softmax(actor_out, available_actions, hard=True, device=self.device)  # gumbel has a gradient                    
@@ -93,6 +94,9 @@ class MADDPGPolicy:
         else:
             if explore:
                 actions = gaussian_noise(actor_out.shape, self.args.act_noise_std) + actor_out
+            elif use_target and self.target_noise is not None:
+                assert isinstance(self.target_noise, float)
+                actions = gaussian_noise(actor_out.shape, self.target_noise) + actor_out
             else:
                 actions = actor_out
             # # clip the actions at the bounds of the action space

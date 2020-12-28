@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import torch.nn.functional as F
 import copy
 import itertools
 from offpolicy.utils.util import huber_loss, mse_loss, to_torch
@@ -165,7 +164,6 @@ class MASAC:
                 mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
-        # TODO: FIX DONE MASK FROM HERE UNTIL LINE 161!
         done_mask = []
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
@@ -198,7 +196,6 @@ class MASAC:
         pol_acts, pol_logprobs = update_policy.get_actions(pol_agents_obs_batch, pol_agents_avail_act_batch, use_gumbel=True)
         # separate into individual agent batches
         agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
-        agent_actor_logprobs = pol_logprobs.split(split_size=batch_size, dim=0)
 
         cent_act = list(map(lambda arr: to_torch(arr).to(**self.tpdv), cent_act))
         actor_cent_acts = copy.deepcopy(cent_act)
@@ -217,7 +214,6 @@ class MASAC:
         actor_Q1, actor_Q2 = update_policy.critic(stacked_cent_obs, actor_update_cent_acts)
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = update_policy.alpha * pol_logprobs - actor_Q
-        # TODO: mask loss
         actor_loss = (actor_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
 
         update_policy.actor_optimizer.zero_grad()
@@ -385,11 +381,10 @@ class MASAC:
                 sum_act_dim = int(sum(self.policies[p_id].act_dim))
             else:
                 sum_act_dim = self.policies[p_id].act_dim
-            for a_id in self.policy_agents[p_id]:
+            for _ in self.policy_agents[p_id]:
                 mask_temp.append(np.zeros(sum_act_dim, dtype=np.float32))
 
         masks = []
-        # TODO: FIX DONE MASK FROM HERE UNTIL LINE 161!
         done_mask = []
         # need to iterate through agents, but only formulate masks at each step
         for i in range(num_update_agents):
@@ -422,7 +417,6 @@ class MASAC:
         pol_acts, pol_logprobs = update_policy.get_actions(pol_agents_obs_batch, pol_agents_avail_act_batch, use_gumbel=True)
         # separate into individual agent batches
         agent_actor_batches = pol_acts.split(split_size=batch_size, dim=0)
-        agent_actor_logprobs = pol_logprobs.split(split_size=batch_size, dim=0)
 
         cent_act = list(map(lambda arr: to_torch(arr).to(**self.tpdv), cent_act))
         # cat along final dim to formulate centralized action and stack copies of the batch
@@ -436,7 +430,6 @@ class MASAC:
         pol_Q1, pol_Q2 = update_policy.critic(all_agent_cent_obs, actor_update_cent_acts)
         pol_Q = torch.min(pol_Q1, pol_Q2)
         actor_loss = update_policy.alpha * pol_logprobs - pol_Q
-        # TODO: include mask here
         actor_loss = (actor_loss * (1 - done_mask)).sum() / (1 - done_mask).sum()
 
         update_policy.actor_optimizer.zero_grad()

@@ -184,10 +184,9 @@ class MlpRunner(object):
 
     def batch_train(self):
         self.trainer.prep_training()
-        # do a gradient update if the number of episodes collected since the last training update exceeds the specified amount
-        update_actor = ((self.total_train_steps % self.actor_train_interval_step) == 0)
         # gradient updates
         self.train_infos = []
+        update_actor = True
         for p_id in self.policy_ids:
             if self.use_per:
                 beta = self.beta_anneal.eval(self.total_train_steps)
@@ -197,7 +196,8 @@ class MlpRunner(object):
 
             update = self.trainer.shared_train_policy_on_batch if self.use_same_share_obs else self.trainer.cent_train_policy_on_batch
             
-            train_info, new_priorities, idxes = update(p_id, sample, update_actor)
+            train_info, new_priorities, idxes = update(p_id, sample)
+            update_actor = train_info['update_actor']
 
             if self.use_per:
                 self.buffer.update_priorities(idxes, new_priorities, p_id)

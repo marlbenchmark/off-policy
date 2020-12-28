@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch.distributions import OneHotCategorical
-from offpolicy.algorithms.r_maddpg.algorithm.r_actor_critic import R_Actor, R_Critic
+from offpolicy.algorithms.r_maddpg.algorithm.r_actor_critic import R_MADDPG_Actor, R_MADDPG_Critic
 from offpolicy.algorithms.r_matd3.algorithm.r_actor_critic import R_MATD3_Actor, R_MATD3_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, to_numpy
@@ -29,11 +29,10 @@ class R_MADDPGPolicy(RecurrentPolicy):
         self.discrete = is_discrete(self.act_space)
         self.multidiscrete = is_multidiscrete(self.act_space)
 
-        actor_class = R_MATD3_Actor if td3 else R_Actor
-        critic_class = R_MATD3_Critic if td3 else R_Critic
+        actor_class = R_MATD3_Actor if td3 else R_MADDPG_Actor
+        critic_class = R_MATD3_Critic if td3 else R_MADDPG_Critic
         self.actor = actor_class(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
         self.critic = critic_class(self.args, self.central_obs_dim, self.central_act_dim, self.device)
-
 
         self.target_actor = actor_class(self.args, self.obs_dim, self.act_dim, self.device, take_prev_action=self.prev_act_inp)
         self.target_critic = critic_class(self.args, self.central_obs_dim, self.central_act_dim, self.device)
