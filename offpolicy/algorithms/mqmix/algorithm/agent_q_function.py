@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 
-from offpolicy.utils.util import init, to_torch
+from offpolicy.utils.util import to_torch
 from offpolicy.algorithms.utils.mlp import MLPBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
 class AgentQFunction(nn.Module):
-    # GRU implementation of the Agent Q function
+    # MLP implementation of the Agent Q function
 
     def __init__(self, args, input_dim, act_dim, device):
         # input dim is agent obs dim + agent acf dim

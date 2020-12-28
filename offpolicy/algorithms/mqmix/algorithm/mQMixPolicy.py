@@ -3,9 +3,9 @@ import torch
 from offpolicy.algorithms.mqmix.algorithm.agent_q_function import AgentQFunction
 from torch.distributions import Categorical, OneHotCategorical
 from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, to_numpy
+from offpolicy.algorithms.common.mlp_policy import MLPPolicy
 
-
-class M_QMixPolicy:
+class M_QMixPolicy(MLPPolicy):
     def __init__(self, config, policy_config, train=True):
         """
         init relevent args
@@ -31,7 +31,7 @@ class M_QMixPolicy:
     def get_q_values(self, obs_batch, action_batch=None):
         """
         Get q values for state action pair batch
-        Prev_action_batch: batch_size x action_dim, rows are onehot is onehot row matrix, but action_batch is a nx1 vector (not onehot)
+        Action_batch is a nx1 vector (not onehot)
         """
         q_batch = self.q_network(obs_batch)
         if action_batch is not None:
