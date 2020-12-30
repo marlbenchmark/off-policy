@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.distributions import OneHotCategorical, Normal
-from offpolicy.algorithms.common.mlp_policy import MLPPolicy
+from offpolicy.algorithms.base.mlp_policy import MLPPolicy
 from offpolicy.algorithms.masac.algorithm.actor_critic import MASAC_Gaussian_Actor, MASAC_Discrete_Actor, MASAC_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, soft_update, hard_update, onehot_from_logits, gumbel_softmax, avail_choose
 

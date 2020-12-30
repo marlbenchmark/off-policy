@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from offpolicy.algorithms.qmix.algorithm.agent_q_function import AgentQFunction
-from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
+from offpolicy.algorithms.base.recurrent_policy import RecurrentPolicy
 from torch.distributions import Categorical, OneHotCategorical
 from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscrete, make_onehot, DecayThenFlatSchedule, avail_choose, to_torch, to_numpy
 

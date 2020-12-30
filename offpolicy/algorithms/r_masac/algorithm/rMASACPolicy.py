@@ -4,7 +4,7 @@ from torch.distributions import Normal, OneHotCategorical
 from offpolicy.algorithms.r_masac.algorithm.r_actor_critic import R_MASAC_Gaussian_Actor, R_MASAC_Discrete_Actor, R_MASAC_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, avail_choose
-from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
+from offpolicy.algorithms.base.recurrent_policy import RecurrentPolicy
 
 class R_MASACPolicy(RecurrentPolicy):
     def __init__(self, config, policy_config, train=True):

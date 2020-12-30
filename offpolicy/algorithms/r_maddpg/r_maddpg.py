@@ -4,7 +4,7 @@ import copy
 import itertools
 from offpolicy.utils.util import huber_loss, mse_loss, to_torch
 from offpolicy.utils.popart import PopArt
-from offpolicy.algorithms.common.trainer import Trainer
+from offpolicy.algorithms.base.trainer import Trainer
 
 class R_MADDPG(Trainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=None, episode_length=None, actor_update_interval=1):

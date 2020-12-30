@@ -1,6 +1,4 @@
 import numpy as np
-import torch
-import random
 from offpolicy.utils.util import get_dim_from_space
 from offpolicy.utils.segment_tree import SumSegmentTree, MinSegmentTree
 
@@ -10,7 +8,18 @@ def _cast(x):
 
 
 class MlpReplayBuffer(object):
-    def __init__(self, policy_info, policy_agents, buffer_size, use_same_share_obs, use_avail_acts, use_reward_normalization=False):
+    def __init__(self, policy_info, policy_agents, buffer_size, use_same_share_obs, use_avail_acts,
+                 use_reward_normalization=False):
+        """
+        Replay buffer class for training MLP policies.
+
+        :param policy_info: (dict) maps policy id to a dict containing information about corresponding policy.
+        :param policy_agents: (dict) maps policy id to list of agents controled by corresponding policy.
+        :param buffer_size: (int) max number of transitions to store in the buffer.
+        :param use_same_share_obs: (bool) whether all agents share the same centralized observation.
+        :param use_avail_acts: (bool) whether to store what actions are available.
+        :param use_reward_normalization: (bool) whether to use reward normalization.
+        """
 
         self.policy_info = policy_info
 
@@ -30,30 +39,78 @@ class MlpReplayBuffer(object):
     def insert(self, num_insert_steps, obs, share_obs, acts, rewards,
                next_obs, next_share_obs, dones, dones_env, valid_transition,
                avail_acts, next_avail_acts):
+        """
+        Insert  a set of transitions into buffer. If the buffer size overflows, old transitions are dropped.
 
+        :param num_insert_steps: (int) number of transitions to be added to buffer
+        :param obs: (dict) maps policy id to numpy array of observations of agents corresponding to that policy
+        :param share_obs: (dict) maps policy id to numpy array of centralized observation corresponding to that policy
+        :param acts: (dict) maps policy id to numpy array of actions of agents corresponding to that policy
+        :param rewards: (dict) maps policy id to numpy array of rewards of agents corresponding to that policy
+        :param next_obs: (dict) maps policy id to numpy array of next step observations of agents corresponding to that policy
+        :param next_share_obs: (dict) maps policy id to numpy array of next step centralized observations corresponding to that policy
+        :param dones: (dict) maps policy id to numpy array of terminal status of agents corresponding to that policy
+        :param dones_env: (dict) maps policy id to numpy array of terminal status of env
+        :param valid_transition: (dict) maps policy id to numpy array of whether the corresponding transition is valid of agents corresponding to that policy
+        :param avail_acts: (dict) maps policy id to numpy array of available actions of agents corresponding to that policy
+        :param next_avail_acts: (dict) maps policy id to numpy array of next step available actions of agents corresponding to that policy
+
+        :return: (np.ndarray) indexes of the buffer the new transitions were placed in.
+        """
+        idx_range = None
         for p_id in self.policy_info.keys():
             idx_range = self.policy_buffers[p_id].insert(num_insert_steps,
-                                                         np.array(obs[p_id]), np.array(share_obs[p_id]), np.array(
-                                                             acts[p_id]), np.array(rewards[p_id]),
-                                                         np.array(next_obs[p_id]), np.array(next_share_obs[p_id]), np.array(
-                                                             dones[p_id]), np.array(dones_env[p_id]), np.array(valid_transition[p_id]),
+                                                         np.array(obs[p_id]), np.array(share_obs[p_id]),
+                                                         np.array(acts[p_id]), np.array(rewards[p_id]),
+                                                         np.array(next_obs[p_id]), np.array(next_share_obs[p_id]),
+                                                         np.array(dones[p_id]), np.array(dones_env[p_id]),
+                                                         np.array(valid_transition[p_id]),
                                                          np.array(avail_acts[p_id]), np.array(next_avail_acts[p_id]))
         return idx_range
 
     def sample(self, batch_size):
+        """
+        Sample a set of transitions from buffer, uniformly at random.
+        :param batch_size: (int) number of transitions to sample from buffer.
+
+        :return: obs: (dict) maps policy id to sampled observations corresponding to that policy
+        :return: share_obs: (dict) maps policy id to sampled observations corresponding to that policy
+        :return: acts: (dict) maps policy id to sampled actions corresponding to that policy
+        :return: rewards: (dict) maps policy id to sampled rewards corresponding to that policy
+        :return: next_obs: (dict) maps policy id to sampled next step observations corresponding to that policy
+        :return: next_share_obs: (dict) maps policy id to sampled next step centralized observations corresponding to that policy
+        :return: dones: (dict) maps policy id to sampled terminal status of agents corresponding to that policy
+        :return: dones_env: (dict) maps policy id to sampled environment terminal status corresponding to that policy
+        :return: valid_transition: (dict) maps policy_id to whether each sampled transition is valid or not (invalid if corresponding agent is dead)
+        :return: avail_acts: (dict) maps policy_id to available actions corresponding to that policy
+        :return: next_avail_acts: (dict) maps policy_id to next step available actions corresponding to that policy
+        """
         inds = np.random.choice(len(self), batch_size)
-        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts = {
-        }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
         for p_id in self.policy_info.keys():
-            obs[p_id], share_obs[p_id], acts[p_id], rewards[p_id], next_obs[p_id], next_share_obs[p_id], dones[
-                p_id], dones_env[p_id], valid_transition[p_id], avail_acts[p_id], next_avail_acts[p_id] = self.policy_buffers[p_id].sample_inds(inds)
+            obs[p_id], share_obs[p_id], acts[p_id], rewards[p_id], next_obs[p_id], next_share_obs[p_id], \
+            dones[p_id], dones_env[p_id], valid_transition[p_id], avail_acts[p_id], next_avail_acts[p_id] = \
+            self.policy_buffers[p_id].sample_inds(inds)
 
         return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts, None, None
 
 
 class MlpPolicyBuffer(object):
-    def __init__(self, buffer_size, num_agents, obs_space, share_obs_space, act_space, use_same_share_obs, use_avail_acts, use_reward_normalization=False):
 
+    def __init__(self, buffer_size, num_agents, obs_space, share_obs_space, act_space, use_same_share_obs,
+                 use_avail_acts, use_reward_normalization=False):
+        """
+        Buffer class containing buffer data corresponding to a single policy.
+
+        :param buffer_size: (int) number of transitions to sample from buffer.
+        :param num_agents: (int) number of agents controlled by the policy.
+        :param obs_space: (gym.Space) observation space of the environment.
+        :param share_obs_space: (gym.Space) centralized observation space of the environment.
+        :param act_space: (gym.Space) action space of the environment.
+        :use_same_share_obs: (bool) whether all agents share the same centralized observation.
+        :use_avail_acts: (bool) whether to store what actions are available.
+        :param use_reward_normalization: (bool) whether to use reward normalization.
+        """
         self.buffer_size = buffer_size
         self.num_agents = num_agents
         self.use_same_share_obs = use_same_share_obs
@@ -76,27 +133,22 @@ class MlpPolicyBuffer(object):
             (self.buffer_size, self.num_agents, obs_shape[0]), dtype=np.float32)
 
         if self.use_same_share_obs:
-            self.share_obs = np.zeros(
-                (self.buffer_size, share_obs_shape[0]), dtype=np.float32)
+            self.share_obs = np.zeros((self.buffer_size, share_obs_shape[0]), dtype=np.float32)
         else:
-            self.share_obs = np.zeros(
-                (self.buffer_size, self.num_agents, share_obs_shape[0]), dtype=np.float32)
+            self.share_obs = np.zeros((self.buffer_size, self.num_agents, share_obs_shape[0]), dtype=np.float32)
 
         self.next_obs = np.zeros_like(self.obs, dtype=np.float32)
         self.next_share_obs = np.zeros_like(self.share_obs, dtype=np.float32)
 
         # action
         act_dim = np.sum(get_dim_from_space(act_space))
-        self.acts = np.zeros(
-            (self.buffer_size, self.num_agents, act_dim), dtype=np.float32)
+        self.acts = np.zeros((self.buffer_size, self.num_agents, act_dim), dtype=np.float32)
         if self.use_avail_acts:
             self.avail_acts = np.ones_like(self.acts, dtype=np.float32)
-            self.next_avail_acts = np.ones_like(
-                self.avail_acts, dtype=np.float32)
+            self.next_avail_acts = np.ones_like(self.avail_acts, dtype=np.float32)
 
         # rewards
-        self.rewards = np.zeros(
-            (self.buffer_size, self.num_agents, 1), dtype=np.float32)
+        self.rewards = np.zeros((self.buffer_size, self.num_agents, 1), dtype=np.float32)
 
         # default to done being True
         self.dones = np.ones_like(self.rewards, dtype=np.float32)
@@ -109,11 +161,30 @@ class MlpPolicyBuffer(object):
     def insert(self, num_insert_steps, obs, share_obs, acts, rewards,
                next_obs, next_share_obs, dones, dones_env, valid_transition,
                avail_acts=None, next_avail_acts=None):
+        """
+        Insert  a set of transitions corresponding to this policy into buffer. If the buffer size overflows, old transitions are dropped.
+
+        :param num_insert_steps: (int) number of transitions to be added to buffer
+        :param obs: (np.ndarray) observations of agents corresponding to this policy.
+        :param share_obs: (np.ndarray) centralized observations of agents corresponding to this policy.
+        :param acts: (np.ndarray) actions of agents corresponding to this policy.
+        :param rewards: (np.ndarray) rewards of agents corresponding to this policy.
+        :param next_obs: (np.ndarray) next step observations of agents corresponding to this policy.
+        :param next_share_obs: (np.ndarray) next step centralized observations of agents corresponding to this policy.
+        :param dones: (np.ndarray) terminal status of agents corresponding to this policy.
+        :param dones_env: (np.ndarray) environment terminal status.
+        :param valid_transition: (np.ndarray) whether each transition is valid or not (invalid if agent was dead during transition)
+        :param avail_acts: (np.ndarray) available actions of agents corresponding to this policy.
+        :param next_avail_acts: (np.ndarray) next step available actions of agents corresponding to this policy.
+
+        :return: (np.ndarray) indexes of the buffer the new transitions were placed in.
+        """
+
         # obs: [step, episode, agent, dim]
         assert obs.shape[0] == num_insert_steps, ("different size!")
 
         if self.current_i + num_insert_steps <= self.buffer_size:
-            idx_range = np.arange(self.current_i, self.current_i + num_insert_steps)       
+            idx_range = np.arange(self.current_i, self.current_i + num_insert_steps)
         else:
             num_left_steps = self.current_i + num_insert_steps - self.buffer_size
             idx_range = np.concatenate((np.arange(self.current_i, self.buffer_size), np.arange(num_left_steps)))
@@ -131,13 +202,28 @@ class MlpPolicyBuffer(object):
             self.avail_acts[idx_range] = avail_acts.copy()
             self.next_avail_acts[idx_range] = next_avail_acts.copy()
 
-        self.current_i = idx_range[-1] + 1 
+        self.current_i = idx_range[-1] + 1
         self.filled_i = min(self.filled_i + len(idx_range), self.buffer_size)
 
         return idx_range
 
     def sample_inds(self, sample_inds):
+        """
+        Sample a set of transitions from buffer from the specified indices.
+        :param sample_inds: (np.ndarray) indices of samples to return from buffer.
 
+        :return: obs: (np.ndarray) sampled observations corresponding to that policy
+        :return: share_obs: (np.ndarray) sampled observations corresponding to that policy
+        :return: acts: (np.ndarray) sampled actions corresponding to that policy
+        :return: rewards: (np.ndarray) sampled rewards corresponding to that policy
+        :return: next_obs: (np.ndarray) sampled next step observations corresponding to that policy
+        :return: next_share_obs: (np.ndarray) sampled next step centralized observations corresponding to that policy
+        :return: dones: (np.ndarray) sampled terminal status of agents corresponding to that policy
+        :return: dones_env: (np.ndarray) sampled environment terminal status corresponding to that policy
+        :return: valid_transition: (np.ndarray) whether each sampled transition is valid or not (invalid if corresponding agent is dead)
+        :return: avail_acts: (np.ndarray) sampled available actions corresponding to that policy
+        :return: next_avail_acts: (np.ndarray) sampled next step available actions corresponding to that policy
+        """
         obs = _cast(self.obs[sample_inds])
         acts = _cast(self.acts[sample_inds])
         if self.use_reward_normalization:
@@ -172,27 +258,27 @@ class MlpPolicyBuffer(object):
 
 
 class PrioritizedMlpReplayBuffer(MlpReplayBuffer):
-    def __init__(self, alpha, policy_info, policy_agents, buffer_size, use_same_share_obs, use_avail_acts, use_reward_normalization=False):
+    def __init__(self, alpha, policy_info, policy_agents, buffer_size, use_same_share_obs, use_avail_acts,
+                 use_reward_normalization=False):
+        """Prioritized replay buffer class for training MLP policies. See parent class."""
         super(PrioritizedMlpReplayBuffer, self).__init__(policy_info, policy_agents,
-                                                         buffer_size, use_same_share_obs, use_avail_acts, use_reward_normalization)
+                                                         buffer_size, use_same_share_obs, use_avail_acts,
+                                                         use_reward_normalization)
         self.alpha = alpha
         self.policy_info = policy_info
         it_capacity = 1
         while it_capacity < buffer_size:
             it_capacity *= 2
 
-        self._it_sums = {p_id: SumSegmentTree(
-            it_capacity) for p_id in self.policy_info.keys()}
-        self._it_mins = {p_id: MinSegmentTree(
-            it_capacity) for p_id in self.policy_info.keys()}
+        self._it_sums = {p_id: SumSegmentTree(it_capacity) for p_id in self.policy_info.keys()}
+        self._it_mins = {p_id: MinSegmentTree(it_capacity) for p_id in self.policy_info.keys()}
         self.max_priorities = {p_id: 1.0 for p_id in self.policy_info.keys()}
 
-    def insert(self, num_insert_steps, obs, share_obs, acts, rewards,
-               next_obs, next_share_obs, dones, dones_env, valid_transition,
-               avail_acts=None, next_avail_acts=None):
-        idx_range = super().insert(num_insert_steps, obs, share_obs, acts, rewards,
-                                   next_obs, next_share_obs, dones, dones_env, valid_transition,
-                                   avail_acts, next_avail_acts)
+    def insert(self, num_insert_steps, obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env,
+               valid_transition, avail_acts=None, next_avail_acts=None):
+        """See parent class."""
+        idx_range = super().insert(num_insert_steps, obs, share_obs, acts, rewards, next_obs, next_share_obs, dones,
+                                   dones_env, valid_transition, avail_acts, next_avail_acts)
         for idx in range(idx_range[0], idx_range[1]):
             for p_id in self.policy_info.keys():
                 self._it_sums[p_id][idx] = self.max_priorities[p_id] ** self.alpha
@@ -201,15 +287,21 @@ class PrioritizedMlpReplayBuffer(MlpReplayBuffer):
         return idx_range
 
     def _sample_proportional(self, batch_size, p_id=None):
-        mass = []
         total = self._it_sums[p_id].sum(0, len(self) - 1)
         mass = np.random.random(size=batch_size) * total
         idx = self._it_sums[p_id].find_prefixsum_idx(mass)
         return idx
 
     def sample(self, batch_size, beta=0, p_id=None):
-        assert len(
-            self) > batch_size, "Cannot sample with no completed episodes in the buffer!"
+        """
+        Sample a set of transitions from buffer; probability of choosing a given sample is proportional to its priority.
+        :param batch_size: (int) number of transitions to sample.
+        :param beta: (float) controls the amount of prioritization to apply.
+        :param p_id: (str) policy which will be updated using the samples.
+
+        :return: See parent class.
+        """
+        assert len(self) > batch_size, "Not enough samples in the buffer!"
         assert beta > 0
 
         batch_inds = self._sample_proportional(batch_size, p_id)
@@ -219,12 +311,11 @@ class PrioritizedMlpReplayBuffer(MlpReplayBuffer):
         p_sample = self._it_sums[p_id][batch_inds] / self._it_sums[p_id].sum()
         weights = (p_sample * len(self)) ** (-beta) / max_weight
 
-        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts = {
-        }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+        obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
         for p_id in self.policy_info.keys():
             p_buffer = self.policy_buffers[p_id]
-            obs[p_id], share_obs[p_id], acts[p_id], rewards[p_id], next_obs[p_id], next_share_obs[p_id], dones[
-                p_id], dones_env[p_id], valid_transition[p_id], avail_acts[p_id], next_avail_acts[p_id] = p_buffer.sample_inds(batch_inds)
+            obs[p_id], share_obs[p_id], acts[p_id], rewards[p_id], next_obs[p_id], next_share_obs[p_id], dones[p_id], \
+            dones_env[p_id], valid_transition[p_id], avail_acts[p_id], next_avail_acts[p_id] = p_buffer.sample_inds(batch_inds)
 
         return obs, share_obs, acts, rewards, next_obs, next_share_obs, dones, dones_env, valid_transition, avail_acts, next_avail_acts, weights, batch_inds
 

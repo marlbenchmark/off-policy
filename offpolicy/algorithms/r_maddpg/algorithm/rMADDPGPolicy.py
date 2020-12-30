@@ -5,7 +5,7 @@ from offpolicy.algorithms.r_maddpg.algorithm.r_actor_critic import R_MADDPG_Acto
 from offpolicy.algorithms.r_matd3.algorithm.r_actor_critic import R_MATD3_Actor, R_MATD3_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, to_numpy
-from offpolicy.algorithms.common.recurrent_policy import RecurrentPolicy
+from offpolicy.algorithms.base.recurrent_policy import RecurrentPolicy
 
 
 class R_MADDPGPolicy(RecurrentPolicy):
