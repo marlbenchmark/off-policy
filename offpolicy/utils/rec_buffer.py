@@ -10,6 +10,16 @@ def _cast(x):
 class RecReplayBuffer(object):
     def __init__(self, policy_info, policy_agents, buffer_size, episode_length, use_same_share_obs, use_avail_acts,
                  use_reward_normalization=False):
+        """
+        Replay buffer class for training RNN policies. Stores entire episodes rather than single transitions.
+
+        :param policy_info: (dict) maps policy id to a dict containing information about corresponding policy.
+        :param policy_agents: (dict) maps policy id to list of agents controled by corresponding policy.
+        :param buffer_size: (int) max number of transitions to store in the buffer.
+        :param use_same_share_obs: (bool) whether all agents share the same centralized observation.
+        :param use_avail_acts: (bool) whether to store what actions are available.
+        :param use_reward_normalization: (bool) whether to use reward normalization.
+        """
         self.policy_info = policy_info
 
         self.policy_buffers = {p_id: RecPolicyBuffer(buffer_size,
@@ -27,7 +37,21 @@ class RecReplayBuffer(object):
         return self.policy_buffers['policy_0'].filled_i
 
     def insert(self, num_insert_episodes, obs, share_obs, acts, rewards, dones, dones_env, avail_acts):
+        """
+        Insert a set of episodes into buffer. If the buffer size overflows, old episodes are dropped.
 
+        :param num_insert_episodes: (int) number of episodes to be added to buffer
+        :param obs: (dict) maps policy id to numpy array of observations of agents corresponding to that policy
+        :param share_obs: (dict) maps policy id to numpy array of centralized observation corresponding to that policy
+        :param acts: (dict) maps policy id to numpy array of actions of agents corresponding to that policy
+        :param rewards: (dict) maps policy id to numpy array of rewards of agents corresponding to that policy
+        :param dones: (dict) maps policy id to numpy array of terminal status of agents corresponding to that policy
+        :param dones_env: (dict) maps policy id to numpy array of terminal status of env
+        :param valid_transition: (dict) maps policy id to numpy array of whether the corresponding transition is valid of agents corresponding to that policy
+        :param avail_acts: (dict) maps policy id to numpy array of available actions of agents corresponding to that policy
+
+        :return: (np.ndarray) indexes in which the new transitions were placed.
+        """
         for p_id in self.policy_info.keys():
             idx_range = self.policy_buffers[p_id].insert(num_insert_episodes, np.array(obs[p_id]),
                                                          np.array(share_obs[p_id]), np.array(acts[p_id]),
@@ -36,6 +60,19 @@ class RecReplayBuffer(object):
         return idx_range
 
     def sample(self, batch_size):
+        """
+        Sample a set of episodes from buffer, uniformly at random.
+        :param batch_size: (int) number of episodes to sample from buffer.
+
+        :return: obs: (dict) maps policy id to sampled observations corresponding to that policy
+        :return: share_obs: (dict) maps policy id to sampled observations corresponding to that policy
+        :return: acts: (dict) maps policy id to sampled actions corresponding to that policy
+        :return: rewards: (dict) maps policy id to sampled rewards corresponding to that policy
+        :return: dones: (dict) maps policy id to sampled terminal status of agents corresponding to that policy
+        :return: dones_env: (dict) maps policy id to sampled environment terminal status corresponding to that policy
+        :return: valid_transition: (dict) maps policy_id to whether each sampled transition is valid or not (invalid if corresponding agent is dead)
+        :return: avail_acts: (dict) maps policy_id to available actions corresponding to that policy
+        """
         inds = np.random.choice(self.__len__(), batch_size)
         obs, share_obs, acts, rewards, dones, dones_env, avail_acts = {}, {}, {}, {}, {}, {}, {}
         for p_id in self.policy_info.keys():
@@ -48,7 +85,19 @@ class RecReplayBuffer(object):
 class RecPolicyBuffer(object):
     def __init__(self, buffer_size, episode_length, num_agents, obs_space, share_obs_space, act_space,
                  use_same_share_obs, use_avail_acts, use_reward_normalization=False):
+        """
+        Buffer class containing buffer data corresponding to a single policy.
 
+        :param buffer_size: (int) max number of episodes to store in buffer.
+        :param episode_length: (int) max length of an episode.
+        :param num_agents: (int) number of agents controlled by the policy.
+        :param obs_space: (gym.Space) observation space of the environment.
+        :param share_obs_space: (gym.Space) centralized observation space of the environment.
+        :param act_space: (gym.Space) action space of the environment.
+        :use_same_share_obs: (bool) whether all agents share the same centralized observation.
+        :use_avail_acts: (bool) whether to store what actions are available.
+        :param use_reward_normalization: (bool) whether to use reward normalization.
+        """
         self.buffer_size = buffer_size
         self.episode_length = episode_length
         self.num_agents = num_agents
@@ -95,6 +144,22 @@ class RecPolicyBuffer(object):
         return self.filled_i
 
     def insert(self, num_insert_episodes, obs, share_obs, acts, rewards, dones, dones_env, avail_acts=None):
+        """
+        Insert a set of episodes corresponding to this policy into buffer. If the buffer size overflows, old transitions are dropped.
+
+        :param num_insert_steps: (int) number of transitions to be added to buffer
+        :param obs: (np.ndarray) observations of agents corresponding to this policy.
+        :param share_obs: (np.ndarray) centralized observations of agents corresponding to this policy.
+        :param acts: (np.ndarray) actions of agents corresponding to this policy.
+        :param rewards: (np.ndarray) rewards of agents corresponding to this policy.
+        :param dones: (np.ndarray) terminal status of agents corresponding to this policy.
+        :param dones_env: (np.ndarray) environment terminal status.
+        :param valid_transition: (np.ndarray) whether each transition is valid or not (invalid if agent was dead during transition)
+        :param avail_acts: (np.ndarray) available actions of agents corresponding to this policy.
+
+        :return: (np.ndarray) indexes of the buffer the new transitions were placed in.
+        """
+
         # obs: [step, episode, agent, dim]
         episode_length = acts.shape[0]
         assert episode_length == self.episode_length, ("different dimension!")
@@ -125,6 +190,19 @@ class RecPolicyBuffer(object):
         return idx_range
 
     def sample_inds(self, sample_inds):
+        """
+        Sample a set of transitions from buffer from the specified indices.
+        :param sample_inds: (np.ndarray) indices of samples to return from buffer.
+
+        :return: obs: (np.ndarray) sampled observations corresponding to that policy
+        :return: share_obs: (np.ndarray) sampled observations corresponding to that policy
+        :return: acts: (np.ndarray) sampled actions corresponding to that policy
+        :return: rewards: (np.ndarray) sampled rewards corresponding to that policy
+        :return: dones: (np.ndarray) sampled terminal status of agents corresponding to that policy
+        :return: dones_env: (np.ndarray) sampled environment terminal status corresponding to that policy
+        :return: valid_transition: (np.ndarray) whether each sampled transition in episodes are valid or not (invalid if corresponding agent is dead)
+        :return: avail_acts: (np.ndarray) sampled available actions corresponding to that policy
+        """
 
         obs = _cast(self.obs[:, sample_inds])
         acts = _cast(self.acts[:, sample_inds])
@@ -165,6 +243,7 @@ class RecPolicyBuffer(object):
 class PrioritizedRecReplayBuffer(RecReplayBuffer):
     def __init__(self, alpha, policy_info, policy_agents, buffer_size, episode_length, use_same_share_obs,
                  use_avail_acts, use_reward_normalization=False):
+        """Prioritized replay buffer class for training RNN policies. See parent class."""
         super(PrioritizedRecReplayBuffer, self).__init__(policy_info, policy_agents, buffer_size,
                                                          episode_length, use_same_share_obs, use_avail_acts,
                                                          use_reward_normalization)
@@ -181,6 +260,7 @@ class PrioritizedRecReplayBuffer(RecReplayBuffer):
         self.max_priorities = {p_id: 1.0 for p_id in self.policy_info.keys()}
 
     def insert(self, num_insert_episodes, obs, share_obs, acts, rewards, dones, dones_env, avail_acts=None):
+        """See parent class."""
         idx_range = super().insert(num_insert_episodes, obs, share_obs, acts, rewards, dones, dones_env, avail_acts)
         for idx in range(idx_range[0], idx_range[1]):
             for p_id in self.policy_info.keys():
@@ -190,13 +270,20 @@ class PrioritizedRecReplayBuffer(RecReplayBuffer):
         return idx_range
 
     def _sample_proportional(self, batch_size, p_id=None):
-        mass = []
         total = self._it_sums[p_id].sum(0, len(self) - 1)
         mass = np.random.random(size=batch_size) * total
         idx = self._it_sums[p_id].find_prefixsum_idx(mass)
         return idx
 
     def sample(self, batch_size, beta=0, p_id=None):
+        """
+        Sample a set of episodes from buffer; probability of choosing a given episode is proportional to its priority.
+        :param batch_size: (int) number of episodes to sample.
+        :param beta: (float) controls the amount of prioritization to apply.
+        :param p_id: (str) policy which will be updated using the samples.
+
+        :return: See parent class.
+        """
         assert len(
             self) > batch_size, "Cannot sample with no completed episodes in the buffer!"
         assert beta > 0

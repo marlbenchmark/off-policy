@@ -55,7 +55,7 @@ class MlpReplayBuffer(object):
         :param avail_acts: (dict) maps policy id to numpy array of available actions of agents corresponding to that policy
         :param next_avail_acts: (dict) maps policy id to numpy array of next step available actions of agents corresponding to that policy
 
-        :return: (np.ndarray) indexes of the buffer the new transitions were placed in.
+        :return: (np.ndarray) indexes in which the new transitions were placed.
         """
         idx_range = None
         for p_id in self.policy_info.keys():
@@ -102,7 +102,7 @@ class MlpPolicyBuffer(object):
         """
         Buffer class containing buffer data corresponding to a single policy.
 
-        :param buffer_size: (int) number of transitions to sample from buffer.
+        :param buffer_size: (int) max number of transitions to store in buffer.
         :param num_agents: (int) number of agents controlled by the policy.
         :param obs_space: (gym.Space) observation space of the environment.
         :param share_obs_space: (gym.Space) centralized observation space of the environment.
