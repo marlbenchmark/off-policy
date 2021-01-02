@@ -12,7 +12,7 @@ from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSch
 from offpolicy.runner.rnn.base_runner import RecRunner
 
 class MPERunner(RecRunner):
-    """Runner class for Multiagent Particle Envs (MPE). See parent class for more info."""
+    """Runner class for Multiagent Particle Envs (MPE). See parent class for more information."""
     def __init__(self, config):
         super(MPERunner, self).__init__(config)
         self.collecter = self.shared_collect_rollout if self.share_policy else self.separated_collect_rollout
@@ -24,6 +24,7 @@ class MPERunner(RecRunner):
         self.log_clear()
     
     def eval(self):
+        """Collect episodes to evaluate the policy."""
         self.trainer.prep_rollout()
         eval_infos = {}
         eval_infos['average_episode_rewards'] = []
@@ -38,7 +39,14 @@ class MPERunner(RecRunner):
     # for mpe-simple_spread and mpe-simple_reference  
     @torch.no_grad() 
     def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. All agents share a single policy.
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
 
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         # only 1 policy since all agents share weights
         p_id = "policy_0"
@@ -131,11 +139,12 @@ class MPERunner(RecRunner):
     @torch.no_grad()
     def separated_collect_rollout(self, explore=True, training_episode=True, warmup=False):
         """
-        Collect a rollout in which each agent has its own policy. Used for the simple speaker listener env.
+        Collect a rollout and store it in the buffer. Each agent has its own policy.
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
 
-        :param explore: (bool) whether to use an exploration policy for rollout collection.
-        :param training_episode (bool) whether this episode contributes to the total number of training steps
-        :param warmup (bool): whether to collect episode with purely random actions
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
         """
         env_info = {}
         env = self.env if training_episode or warmup else self.eval_env
@@ -240,6 +249,7 @@ class MPERunner(RecRunner):
         return env_info
 
     def log(self):
+        """See parent class."""
         end = time.time()
         print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS {}.\n"
               .format(self.args.scenario_name,
@@ -255,6 +265,7 @@ class MPERunner(RecRunner):
         self.log_clear()
 
     def log_clear(self):
+        """See parent class."""
         self.env_infos = {}
 
         self.env_infos['average_episode_rewards'] = []

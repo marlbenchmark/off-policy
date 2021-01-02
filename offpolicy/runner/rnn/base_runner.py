@@ -14,7 +14,7 @@ class RecRunner(object):
 
     def __init__(self, config):
         """
-        Initialize runner class.
+        Base class for training recurrent policies.
 
         :param config: (dict) Config dictionary containing parameters for training.
         """
@@ -182,7 +182,7 @@ class RecRunner(object):
                                           self.use_reward_normalization)
     
     def run(self):
-        """Collect a training episode and perform training, saving, logging, and evaluation steps."""
+        """Collect a training episode and perform appropriate training, saving, logging, and evaluation steps."""
 
         # collect data
         self.trainer.prep_rollout()
@@ -215,7 +215,7 @@ class RecRunner(object):
     
     def warmup(self, num_warmup_episodes):
         """
-        fill replay buffer with enough episodes to begin training.
+        Fill replay buffer with enough episodes to begin training.
 
         :param: num_warmup_episodes (int): number of warmup episodes to collect.
         """
@@ -229,7 +229,7 @@ class RecRunner(object):
         print("warmup average episode rewards: {}".format(warmup_reward))
 
     def batch_train(self):
-        """Do a gradient update for the policy."""
+        """Do a gradient update for all policies."""
         self.trainer.prep_training()
 
         # gradient updates
@@ -264,7 +264,6 @@ class RecRunner(object):
     def batch_train_q(self):
         """Do a q-learning update to policy (used for QMix and VDN)."""
         self.trainer.prep_training()
-        update_popart = ((self.total_train_steps % self.popart_update_interval_step) == 0)
         # gradient updates
         self.train_infos = []
 
@@ -290,6 +289,7 @@ class RecRunner(object):
                 self.last_hard_update_episode = self.num_episodes_collected
 
     def save(self):
+        """Save all policies to the path specified by the config."""
         for pid in self.policy_ids:
             policy_critic = self.policies[pid].critic
             critic_save_path = self.save_dir + '/' + str(pid)
@@ -306,6 +306,7 @@ class RecRunner(object):
                        actor_save_path + '/actor.pt')
 
     def save_q(self):
+        """Save all policies to the path specified by the config. Used for QMix and VDN."""
         for pid in self.policy_ids:
             policy_Q = self.policies[pid].q_network
             p_save_path = self.save_dir + '/' + str(pid)
@@ -319,6 +320,7 @@ class RecRunner(object):
                    self.save_dir + '/mixer.pt')
 
     def restore(self):
+        """Load policies policies from pretrained models specified by path in config."""
         for pid in self.policy_ids:
             path = str(self.model_dir) + str(pid)
             print("load the pretrained model from {}".format(path))
@@ -329,6 +331,7 @@ class RecRunner(object):
             self.policies[pid].actor.load_state_dict(policy_actor_state_dict)
 
     def restore_q(self):
+        """Load policies policies from pretrained models specified by path in config. Used for QMix and VDN."""
         for pid in self.policy_ids:
             path = str(self.model_dir) + str(pid)
             print("load the pretrained model from {}".format(path))
@@ -339,12 +342,15 @@ class RecRunner(object):
         self.trainer.mixer.load_state_dict(policy_mixer_state_dict)
 
     def log(self):
+        """Log relevent training and rollout colleciton information.."""
         raise NotImplementedError
 
     def log_clear(self):
+        """Clear logging variables so they do not contain stale information."""
         raise NotImplementedError
 
     def log_env(self, env_info, suffix=None):
+        """Log information related to the environment."""
         for k, v in env_info.items():
             if len(v) > 0:
                 v = np.mean(v)
@@ -356,6 +362,7 @@ class RecRunner(object):
                     self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_train(self, policy_id, train_info):
+        """Log information related to training.."""
         for k, v in train_info.items():
             policy_k = str(policy_id) + '/' + k
             if self.use_wandb:
@@ -364,4 +371,5 @@ class RecRunner(object):
                 self.writter.add_scalars(policy_k, {policy_k: v}, self.total_env_steps)
 
     def collect_rollout(self):
+        """Collect a rollout and store it in the buffer."""
         raise NotImplementedError

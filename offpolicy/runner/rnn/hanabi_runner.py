@@ -1,18 +1,13 @@
-import os
 import numpy as np
-from itertools import chain
-import wandb
 import torch
-from tensorboardX import SummaryWriter
 import time
-
-from offpolicy.utils.rec_buffer import RecReplayBuffer, PrioritizedRecReplayBuffer
-from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
+from offpolicy.utils.util import is_multidiscrete
 
 from offpolicy.runner.rnn.base_runner import RecRunner
 
 class HanabiRunner(RecRunner):
     def __init__(self, config):
+        """Runner class for the Hanabi environment. See parent class for more information."""
         super(HanabiRunner, self).__init__(config)
         # fill replay buffer with random actions
         num_warmup_episodes = max((self.batch_size, self.args.num_random_episodes))
@@ -21,6 +16,7 @@ class HanabiRunner(RecRunner):
         self.log_clear()
 
     def eval(self):
+        """Collect episodes to evaluate the policy."""
         self.trainer.prep_rollout()
 
         eval_infos = {}
@@ -37,6 +33,14 @@ class HanabiRunner(RecRunner):
 
     @torch.no_grad()
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. All agents share a single policy.
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
+
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         p_id = 'policy_0'
         policy = self.policies[p_id]
@@ -229,6 +233,7 @@ class HanabiRunner(RecRunner):
         return env_info
 
     def log(self):
+        """See parent class."""
         end = time.time()
         print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS{}.\n"
               .format(self.args.hanabi_name,
@@ -244,6 +249,7 @@ class HanabiRunner(RecRunner):
         self.log_clear()
 
     def log_clear(self):
+        """See parent class."""
         self.env_infos = {}
 
         self.env_infos['average_episode_rewards'] = []

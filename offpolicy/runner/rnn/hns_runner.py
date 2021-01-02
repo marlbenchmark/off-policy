@@ -1,18 +1,13 @@
-import os
 import numpy as np
-from itertools import chain
 import wandb
 import torch
-from tensorboardX import SummaryWriter
 import time
-
-from offpolicy.utils.rec_buffer import RecReplayBuffer, PrioritizedRecReplayBuffer
-from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSchedule
-
+from offpolicy.utils.util import is_multidiscrete
 from offpolicy.runner.rnn.base_runner import RecRunner
 
 class HNSRunner(RecRunner):
     def __init__(self, config):
+        """Runner class for the Hide and Seek environment. See parent class for more information."""
         super(HNSRunner, self).__init__(config)    
         # fill replay buffer with random actions
         num_warmup_episodes = max((self.batch_size, self.args.num_random_episodes))
@@ -21,6 +16,7 @@ class HNSRunner(RecRunner):
         self.log_clear()
 
     def eval(self):
+        """Collect episodes to evaluate the policy."""
         self.trainer.prep_rollout()
 
         eval_infos = {}
@@ -37,6 +33,14 @@ class HNSRunner(RecRunner):
 
     @torch.no_grad()    
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. All agents share a single policy.
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
+
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         p_id = "policy_0"
         policy = self.policies[p_id]
@@ -45,7 +49,6 @@ class HNSRunner(RecRunner):
 
         success_to_collect_one_episode = False
         while not success_to_collect_one_episode:
-            success = 0
             discard_episode = 0
 
             obs, share_obs, _ = env.reset()
@@ -190,6 +193,11 @@ class HNSRunner(RecRunner):
         self.log_clear()
 
     def log_env(self, env_info, suffix=None):
+        """
+        Log information related to the environment.
+        :param env_info: (dict) contains information about the environment.
+        :param suffix: (str) optional string to add to end of keys contained in env_info.
+        """
         if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
             for k, v in env_info.items():
                 if len(v) > 0:
@@ -202,6 +210,7 @@ class HNSRunner(RecRunner):
                         self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_clear(self):
+        """See parent class."""
         self.env_infos = {}
 
         self.env_infos['average_episode_rewards'] = []
