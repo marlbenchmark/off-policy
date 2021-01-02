@@ -14,6 +14,7 @@ from offpolicy.runner.mlp.base_runner import MlpRunner
 class HanabiRunner(MlpRunner):
 
     def __init__(self, config):
+        """Runner class for the Hanabi environment. See parent class for more information."""
         super(HanabiRunner, self).__init__(config)
         # fill replay buffer with random actions
         self.finish_first_train_reset = False
@@ -25,6 +26,14 @@ class HanabiRunner(MlpRunner):
         
 
     def turn_init(self, p_id, n_rollout_threads, obs, share_obs, avail_acts):
+        """
+        Initialize numpy arrays for a single turn in the Hanabi game.
+        :param p_id: (str) policy id corresponding to the agent whose turn it is.
+        :param n_rollout_threads: (int) number of threads used to collect the rollout (currently only 1).
+        :param obs: (np.ndarray) agent observation corresponding to this turn.
+        :param share_obs: (np.ndarray) agent's global observation corresponding to this turn.
+        :param avail_acts: (np.ndarray) agent's available actions for this turn.
+        """
         self.obs = obs
         self.share_obs = share_obs
         self.avail_acts = avail_acts
@@ -60,6 +69,7 @@ class HanabiRunner(MlpRunner):
 
     @torch.no_grad()
     def eval(self):
+        """Collect episodes to evaluate the policy."""
         self.trainer.prep_rollout()
 
         eval_infos = {}
@@ -75,6 +85,14 @@ class HanabiRunner(MlpRunner):
         self.log_env(eval_infos, suffix="eval_")
 
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. All agents share a single policy. Do training steps when appropriate
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
+
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         p_id = 'policy_0'
         policy = self.policies[p_id]
@@ -254,6 +272,7 @@ class HanabiRunner(MlpRunner):
         return env_info
     
     def eval_collect_rollout(self):
+        """Collect a rollout for evaluation. All agents share a single policy."""
         env_info = {}
         p_id = 'policy_0'
         policy = self.policies[p_id]
@@ -306,6 +325,7 @@ class HanabiRunner(MlpRunner):
                     return env_info          
     
     def log(self):
+        """See parent class."""
         end = time.time()
         print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS{}.\n"
               .format(self.args.hanabi_name,
@@ -321,6 +341,7 @@ class HanabiRunner(MlpRunner):
         self.log_clear()
 
     def log_clear(self):
+        """See parent class."""
         self.env_infos = {}
 
         self.env_infos['average_step_rewards'] = []

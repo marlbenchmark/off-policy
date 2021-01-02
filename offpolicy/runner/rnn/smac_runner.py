@@ -7,7 +7,7 @@ from offpolicy.runner.rnn.base_runner import RecRunner
 
 class SMACRunner(RecRunner):
     def __init__(self, config):
-        """Runner class for the StarcraftII environment (SMAC2). See parent class for more information."""
+        """Runner class for the StarcraftII environment (SMAC). See parent class for more information."""
         super(SMACRunner, self).__init__(config)
         # fill replay buffer with random actions
         num_warmup_episodes = max((self.batch_size, self.args.num_random_episodes))

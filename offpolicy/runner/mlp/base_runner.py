@@ -13,6 +13,11 @@ from offpolicy.utils.util import is_discrete, is_multidiscrete, DecayThenFlatSch
 class MlpRunner(object):
 
     def __init__(self, config):
+        """
+        Base class for training MLP policies.
+
+        :param config: (dict) Config dictionary containing parameters for training.
+        """
         # non-tunable hyperparameters are in args
         self.args = config["args"]
         self.device = config["device"]
@@ -156,6 +161,7 @@ class MlpRunner(object):
                                           self.use_reward_normalization)
 
     def run(self):
+        """Collect a training episode and perform appropriate training, saving, logging, and evaluation steps."""
         # collect data
         self.trainer.prep_rollout()
         env_info = self.collecter(explore=True, training_episode=True, warmup=False)
@@ -180,6 +186,7 @@ class MlpRunner(object):
         return self.total_env_steps
 
     def batch_train(self):
+        """Do a gradient update for all policies."""
         self.trainer.prep_training()
         # gradient updates
         self.train_infos = []
@@ -211,6 +218,7 @@ class MlpRunner(object):
                 self.last_hard_update_T = self.total_env_steps
 
     def batch_train_q(self):
+        """Do a q-learning update to policy (used for QMix and VDN)."""
         self.trainer.prep_training()
         # gradient updates
         self.train_infos = []
@@ -236,6 +244,7 @@ class MlpRunner(object):
                 self.last_hard_update_T = self.total_env_steps
 
     def save(self):
+        """Save all policies to the path specified by the config."""
         for pid in self.policy_ids:
             policy_critic = self.policies[pid].critic
             critic_save_path = self.save_dir + '/' + str(pid)
@@ -252,6 +261,7 @@ class MlpRunner(object):
                        actor_save_path + '/actor.pt')
 
     def save_q(self):
+        """Save all policies to the path specified by the config. Used for QMix and VDN."""
         for pid in self.policy_ids:
             policy_Q = self.policies[pid].q_network
             p_save_path = self.save_dir + '/' + str(pid)
@@ -265,6 +275,7 @@ class MlpRunner(object):
                    self.save_dir + '/mixer.pt')
 
     def restore(self):
+        """Load policies policies from pretrained models specified by path in config."""
         for pid in self.policy_ids:
             path = str(self.model_dir) + str(pid)
             print("load the pretrained model from {}".format(path))
@@ -275,6 +286,7 @@ class MlpRunner(object):
             self.policies[pid].actor.load_state_dict(policy_actor_state_dict)
 
     def restore_q(self):
+        """Load policies policies from pretrained models specified by path in config. Used for QMix and VDN."""
         for pid in self.policy_ids:
             path = str(self.model_dir) + str(pid)
             print("load the pretrained model from {}".format(path))
@@ -286,7 +298,11 @@ class MlpRunner(object):
 
     @torch.no_grad()
     def warmup(self, num_warmup_episodes):
-        # fill replay buffer with enough episodes to begin training
+        """
+        Fill replay buffer with enough episodes to begin training.
+
+        :param: num_warmup_episodes (int): number of warmup episodes to collect.
+        """
         self.trainer.prep_rollout()
         warmup_rewards = []
         print("warm up...")
@@ -303,6 +319,11 @@ class MlpRunner(object):
         raise NotImplementedError
 
     def log_env(self, env_info, suffix=None):
+        """
+        Log information related to the environment.
+        :param env_info: (dict) contains logging information related to the environment.
+        :param suffix: (str) optional string to add to end of keys in env_info when logging.
+        """
         for k, v in env_info.items():
             if len(v) > 0:
                 v = np.mean(v)
@@ -314,6 +335,11 @@ class MlpRunner(object):
                     self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_train(self, policy_id, train_info):
+        """
+        Log information related to training.
+        :param policy_id: (str) policy id corresponding to the information contained in train_info.
+        :param train_info: (dict) contains logging information related to training.
+        """
         for k, v in train_info.items():
             policy_k = str(policy_id) + '/' + k
             if self.use_wandb:
@@ -322,4 +348,5 @@ class MlpRunner(object):
                 self.writter.add_scalars(policy_k, {policy_k: v}, self.total_env_steps)
 
     def collect_rollout(self):
+        """Collect a rollout and store the transitions in the buffer."""
         raise NotImplementedError

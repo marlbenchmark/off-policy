@@ -8,6 +8,7 @@ from offpolicy.runner.mlp.base_runner import MlpRunner
 
 class HNSRunner(MlpRunner):
     def __init__(self, config):
+        """Runner class for the Hide and Seek environment. See parent class for more information."""
         super(HNSRunner, self).__init__(config)
         # fill replay buffer with random actions
         self.finish_first_train_reset = False
@@ -18,6 +19,7 @@ class HNSRunner(MlpRunner):
 
     @torch.no_grad()
     def eval(self):
+        """Collect episodes to evaluate the policy."""
         self.trainer.prep_rollout()
 
         eval_infos = {}
@@ -33,6 +35,14 @@ class HNSRunner(MlpRunner):
         self.log_env(eval_infos, suffix="eval_")
 
     def collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. All agents share a single policy. Do training steps when appropriate
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
+
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         p_id = "policy_0"
         policy = self.policies[p_id]
@@ -167,6 +177,7 @@ class HNSRunner(MlpRunner):
         return env_info
 
     def log(self):
+        """See parent class."""
         end = time.time()
         print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS{}.\n"
               .format(self.env_name,
@@ -182,6 +193,7 @@ class HNSRunner(MlpRunner):
         self.log_clear()
 
     def log_env(self, env_info, suffix=None):
+        """See parent class."""
         if self.env_name == "BoxLocking" or self.env_name == "BlueprintConstruction":
             for k, v in env_info:
                 if len(v) > 0:
@@ -194,6 +206,7 @@ class HNSRunner(MlpRunner):
                         self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_clear(self):
+        """See parent class."""
         self.env_infos = {}
 
         self.env_infos['average_step_rewards'] = []

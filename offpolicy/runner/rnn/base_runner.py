@@ -18,7 +18,6 @@ class RecRunner(object):
 
         :param config: (dict) Config dictionary containing parameters for training.
         """
-
         self.args = config["args"]
         self.device = config["device"]
         self.q_learning = ["qmix","vdn"]
@@ -350,7 +349,11 @@ class RecRunner(object):
         raise NotImplementedError
 
     def log_env(self, env_info, suffix=None):
-        """Log information related to the environment."""
+        """
+        Log information related to the environment.
+        :param env_info: (dict) contains logging information related to the environment.
+        :param suffix: (str) optional string to add to end of keys in env_info when logging. 
+        """
         for k, v in env_info.items():
             if len(v) > 0:
                 v = np.mean(v)
@@ -362,7 +365,11 @@ class RecRunner(object):
                     self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_train(self, policy_id, train_info):
-        """Log information related to training.."""
+        """
+        Log information related to training.
+        :param policy_id: (str) policy id corresponding to the information contained in train_info.
+        :param train_info: (dict) contains logging information related to training.
+        """
         for k, v in train_info.items():
             policy_k = str(policy_id) + '/' + k
             if self.use_wandb:

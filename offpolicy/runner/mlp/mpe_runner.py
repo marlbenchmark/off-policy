@@ -8,6 +8,7 @@ from offpolicy.runner.mlp.base_runner import MlpRunner
 
 class MPERunner(MlpRunner):
     def __init__(self, config):
+        """Runner class for the Multi-Agent Particle Env (MPE)  environment. See parent class for more information."""
         super(MPERunner, self).__init__(config)
         self.collecter = self.shared_collect_rollout if self.share_policy else self.separated_collect_rollout
         # fill replay buffer with random actions
@@ -19,6 +20,7 @@ class MPERunner(MlpRunner):
 
     @torch.no_grad()
     def eval(self):
+        """Collect episodes to evaluate the policy."""
         self.trainer.prep_rollout()
         eval_infos = {}
         eval_infos['average_episode_rewards'] = []
@@ -32,6 +34,14 @@ class MPERunner(MlpRunner):
 
     # for mpe-simple_spread and mpe-simple_reference
     def shared_collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. All agents share a single policy. Do training steps when appropriate
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
+
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         p_id = "policy_0"
         policy = self.policies[p_id]
@@ -144,6 +154,14 @@ class MPERunner(MlpRunner):
 
     # for mpe-simple_speaker_listener 
     def separated_collect_rollout(self, explore=True, training_episode=True, warmup=False):
+        """
+        Collect a rollout and store it in the buffer. Each agent has its own policy.. Do training steps when appropriate.
+        :param explore: (bool) whether to use an exploration strategy when collecting the episoide.
+        :param training_episode: (bool) whether this episode is used for evaluation or training.
+        :param warmup: (bool) whether this episode is being collected during warmup phase.
+
+        :return env_info: (dict) contains information about the rollout (total rewards, etc).
+        """
         env_info = {}
         env = self.env if explore else self.eval_env
         n_rollout_threads = self.num_envs if explore else self.num_eval_envs
@@ -296,6 +314,7 @@ class MPERunner(MlpRunner):
         return env_info
 
     def log(self):
+        """See parent class."""
         end = time.time()
         print("\n Env {} Algo {} Exp {} runs total num timesteps {}/{}, FPS {}.\n"
               .format(self.args.scenario_name,
@@ -311,6 +330,7 @@ class MPERunner(MlpRunner):
         self.log_clear()
 
     def log_env(self, env_info, suffix=None):
+        """See parent class."""
         for k, v in env_info.items():
             if len(v) > 0:
                 v = np.mean(v)
@@ -322,6 +342,7 @@ class MPERunner(MlpRunner):
                     self.writter.add_scalars(suffix_k, {suffix_k: v}, self.total_env_steps)
 
     def log_clear(self):
+        """See parent class."""
         self.env_infos = {}
 
         self.env_infos['average_episode_rewards'] = []
