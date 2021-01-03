@@ -1,13 +1,14 @@
 import torch
 import copy
 from offpolicy.algorithms.mqmix.algorithm.mq_mixer import M_QMixer
+from offpolicy.algorithms.mvdn.algorithm.mvdn_mixer import M_VDNMixer
 from offpolicy.utils.util import soft_update, huber_loss, mse_loss, to_torch
 import numpy as np
 from offpolicy.utils.popart import PopArt
 
 
 class M_QMix:
-    def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0")):
+    def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), vdn=False):
         """
         Trainer class for QMix with MLP policies. See parent class for more information.
         """
@@ -42,8 +43,11 @@ class M_QMix:
             multidiscrete_list = [len(self.policies[p_id].act_dim) *
                                   len(self.policy_agents[p_id]) for p_id in self.policy_ids]
 
-        # mixer network       
-        self.mixer = M_QMixer(args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
+        # mixer network
+        if vdn:
+            self.mixer = M_VDNMixer(args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
+        else:
+            self.mixer = M_QMixer(args, self.num_agents, self.policies['policy_0'].central_obs_dim, self.device, multidiscrete_list=multidiscrete_list)
 
         # target policies/networks
         self.target_policies = {p_id: copy.deepcopy(self.policies[p_id]) for p_id in self.policy_ids}
