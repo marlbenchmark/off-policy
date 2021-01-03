@@ -11,6 +11,7 @@ class M_QMix:
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), vdn=False):
         """
         Trainer class for QMix with MLP policies. See parent class for more information.
+        :param vdn: (bool) whether the algorithm in  use is VDN.
         """
         self.args = args
         self.use_popart = self.args.use_popart
