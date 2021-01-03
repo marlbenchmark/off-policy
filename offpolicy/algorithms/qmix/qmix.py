@@ -9,7 +9,11 @@ import numpy as np
 
 class QMix(Trainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0"), episode_length=None, vdn=False):
-        """Class to do gradient updates"""
+        """
+        Trainer class for recurrent QMix/VDN. See parent class for more information.
+        :param episode_length: (int) maximum length of an episode.
+        :param vdnl: (bool) whether the algorithm being used is VDN.
+        """
         self.args = args
         self.use_popart = self.args.use_popart
         self.use_value_active_masks = self.args.use_value_active_masks
@@ -71,6 +75,7 @@ class QMix(Trainer):
             print("double Q learning will be used")
 
     def train_policy_on_batch(self, batch, update_policy_id=None):
+        """See parent class."""
         # unpack the batch
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
@@ -302,6 +307,7 @@ class QMix(Trainer):
         return train_info, new_priorities, idxes
 
     def hard_target_updates(self):
+        """Hard update the target networks."""
         print("hard update targets")
         for policy_id in self.policy_ids:
             self.target_policies[policy_id].load_state(self.policies[policy_id])
@@ -309,12 +315,14 @@ class QMix(Trainer):
             self.target_mixer.load_state_dict(self.mixer.state_dict())
 
     def soft_target_updates(self):
+        """Soft update the target networks."""
         for policy_id in self.policy_ids:
             soft_update(self.target_policies[policy_id], self.policies[policy_id], self.tau)
         if self.mixer is not None:
             soft_update(self.target_mixer, self.mixer, self.tau)
 
     def prep_training(self):
+        """See parent class."""
         for p_id in self.policy_ids:
             self.policies[p_id].q_network.train()
             self.target_policies[p_id].q_network.train()
@@ -322,6 +330,7 @@ class QMix(Trainer):
         self.target_mixer.train()
 
     def prep_rollout(self):
+        """See parent class."""
         for p_id in self.policy_ids:
             self.policies[p_id].q_network.eval()
             self.target_policies[p_id].q_network.eval()

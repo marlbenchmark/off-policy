@@ -8,7 +8,10 @@ from offpolicy.algorithms.base.trainer import Trainer
 
 class R_MASAC(Trainer):
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=None, episode_length=None):
-        """Contains all policies and does policy updates"""
+        """
+        Trainer class for recurrent MASAC. See parent class for more information.
+        :param episode_length: (int) maximum length of an episode.
+        """
         self.args = args
         self.use_popart = self.args.use_popart
         self.use_value_active_masks = self.args.use_value_active_masks
@@ -36,6 +39,20 @@ class R_MASAC(Trainer):
 
     # @profile
     def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):
+        """
+        Form centralized observation and action info for current and next timesteps. Step forward target actor RNN.
+        :param update_policy_id: (str) id of policy being updated.
+        :param obs_batch: (np.ndarray) batch of observation sequences sampled from buffer.
+        :param act_batch: (np.ndarray) batch of action sequences sampled from buffer.
+        :param avail_act_batch: (np.ndarray) batch of available action sequences sampled from buffer. None if environment does not limit actions.
+
+        :return cent_act_sequence_critic: (np.ndarray) batch of centralized action sequences for critic input.
+        :return act_sequences: (list) list of action sequences corresponding to each agent.
+        :return act_sequence_replace_ind_start: (int) index of act_sequences from which to replace actions for actor update.
+        :return cent_nact_sequence: (np.ndarray) batch of centralize next step action sequences.
+        :return all_agent_nact_log_probs: (torch.Tensor) batch of log next step action log probability sequences, for all agents.
+        :return update_policy_nact_log_probs: (torch.Tensor) batch of log next step action log probability sequences, for agents controlled by update_policy_ids.
+        """
         act_sequences = []
         nact_sequences = []
         update_policy_nact_log_probs = None
@@ -90,6 +107,7 @@ class R_MASAC(Trainer):
         return cent_act_sequence_critic, act_sequences, act_sequence_replace_ind_start, cent_nact_sequence, all_agent_nact_log_probs, update_policy_nact_log_probs
 
     def train_policy_on_batch(self, update_policy_id, batch):
+        """See parent class."""
         if self.use_same_share_obs:
             return self.shared_train_policy_on_batch(update_policy_id, batch)
         else:
@@ -97,6 +115,7 @@ class R_MASAC(Trainer):
 
     # @profile
     def shared_train_policy_on_batch(self, update_policy_id, batch):
+        """Training function when all agents share the same centralized observation. See train_policy_on_batch."""
         # unpack the batch
         obs_batch, cent_obs_batch, \
             act_batch, rew_batch, \
@@ -357,6 +376,7 @@ class R_MASAC(Trainer):
         return train_info, new_priorities, idxes
 
     def cent_train_policy_on_batch(self, update_policy_id, batch):
+        """Training function when each agent has its own centralized observation. See train_policy_on_batch."""
         # unpack the batch
         obs_batch, cent_obs_batch, \
         act_batch, rew_batch, \
@@ -640,12 +660,14 @@ class R_MASAC(Trainer):
         return train_info, new_priorities, idxes
 
     def prep_training(self):
+        """See parent class."""
         for policy in self.policies.values():
             policy.actor.train()
             policy.critic.train()
             policy.target_critic.train()
 
     def prep_rollout(self):
+        """See parent class."""
         for policy in self.policies.values():
             policy.actor.eval()
             policy.critic.eval()
