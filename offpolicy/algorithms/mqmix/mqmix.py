@@ -1,14 +1,16 @@
 import torch
 import copy
 from offpolicy.algorithms.mqmix.algorithm.mq_mixer import M_QMixer
-from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, to_torch
+from offpolicy.utils.util import soft_update, huber_loss, mse_loss, to_torch
 import numpy as np
 from offpolicy.utils.popart import PopArt
 
 
 class M_QMix:
     def __init__(self, args, num_agents, policies, policy_mapping_fn, device=torch.device("cuda:0")):
-        """Class to do gradient updates"""
+        """
+        Trainer class for QMix with MLP policies. See parent class for more information.
+        """
         self.args = args
         self.use_popart = self.args.use_popart
         self.use_value_active_masks = self.args.use_value_active_masks
@@ -59,6 +61,7 @@ class M_QMix:
             print("double Q learning will be used")
 
     def train_policy_on_batch(self, batch, use_same_share_obs):
+        """See parent class."""
         # unpack the batch
         obs_batch, cent_obs_batch, \
         act_batch, rew_batch, \
@@ -213,6 +216,7 @@ class M_QMix:
         return train_info, new_priorities, idxes
 
     def hard_target_updates(self):
+        """Hard update the target networks."""
         print("hard update targets")
         for policy_id in self.policy_ids:
             self.target_policies[policy_id].load_state(
@@ -221,6 +225,7 @@ class M_QMix:
             self.target_mixer.load_state_dict(self.mixer.state_dict())
 
     def soft_target_updates(self):
+        """Soft update the target networks."""
         for policy_id in self.policy_ids:
             soft_update(
                 self.target_policies[policy_id], self.policies[policy_id], self.tau)
@@ -228,6 +233,7 @@ class M_QMix:
             soft_update(self.target_mixer, self.mixer, self.tau)
 
     def prep_training(self):
+        """See parent class."""
         for p_id in self.policy_ids:
             self.policies[p_id].q_network.train()
             self.target_policies[p_id].q_network.train()
@@ -235,6 +241,7 @@ class M_QMix:
         self.target_mixer.train()
 
     def prep_rollout(self):
+        """See parent class."""
         for p_id in self.policy_ids:
             self.policies[p_id].q_network.eval()
             self.target_policies[p_id].q_network.eval()

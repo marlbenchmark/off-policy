@@ -40,7 +40,7 @@ class R_MASAC(Trainer):
     # @profile
     def get_update_info(self, update_policy_id, obs_batch, act_batch, avail_act_batch):
         """
-        Form centralized observation and action info for current and next timesteps. Step forward target actor RNN.
+        Form centralized observation and action info.
         :param update_policy_id: (str) id of policy being updated.
         :param obs_batch: (np.ndarray) batch of observation sequences sampled from buffer.
         :param act_batch: (np.ndarray) batch of action sequences sampled from buffer.
