@@ -24,7 +24,7 @@ def get_config():
                         default=2000000, help="Number of env steps to train for")
     parser.add_argument('--use_wandb', action='store_false', default=True,
                         help="Whether to use weights&biases, if not, use tensorboardX instead")
-    parser.add_argument('--user_name', type=str, default="yuchao")
+    parser.add_argument('--user_name', type=str, default="zoeyuchao")
 
     # env parameters
     parser.add_argument('--env_name', type=str, default="StarCraft2")
