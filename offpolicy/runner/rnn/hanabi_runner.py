@@ -91,8 +91,8 @@ class HanabiRunner(RecRunner):
         turn_avail_acts = np.zeros((self.num_envs, len(self.policy_agents[p_id]), *avail_acts.shape[1:]), dtype=np.float32)
         turn_acts = np.zeros_like(last_acts)
         turn_rewards = np.zeros_like(turn_rewards_since_last_action)
-        turn_dones = np.zeros_like(turn_rewards_since_last_action)
-        turn_dones_env = np.zeros((self.num_envs, 1), dtype=np.float32)
+        turn_dones = np.ones(turn_rewards_since_last_action)
+        turn_dones_env = np.ones((self.num_envs, 1), dtype=np.float32)
 
         while t < self.episode_length:
             # get actions for all agents to step the env
