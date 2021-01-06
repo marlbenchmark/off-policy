@@ -73,7 +73,7 @@ class SMACRunner(RecRunner):
         episode_rewards = {p_id : np.zeros((self.episode_length, self.num_envs, self.num_agents, 1), dtype=np.float32) for p_id in self.policy_ids}
         episode_dones = {p_id : np.ones((self.episode_length, self.num_envs, self.num_agents, 1), dtype=np.float32) for p_id in self.policy_ids}
         episode_dones_env = {p_id : np.ones((self.episode_length, self.num_envs, 1), dtype=np.float32) for p_id in self.policy_ids}
-        episode_avail_acts = {p_id : np.ones((self.episode_length + 1, self.num_envs, self.num_agents, self.act_dim), dtype=np.float32) for p_id in self.policy_ids}
+        episode_avail_acts = {p_id : np.zeros((self.episode_length + 1, self.num_envs, self.num_agents, self.act_dim), dtype=np.float32) for p_id in self.policy_ids}
 
         t = 0
         while t < self.episode_length:
