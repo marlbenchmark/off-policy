@@ -150,7 +150,7 @@ class SMACRunner(RecRunner):
                                episode_dones_env,
                                episode_avail_acts)
 
-        env_info['average_episode_rewards'] = np.mean(np.sum(episode_rewards[p_id], axis=0))
+        env_info['average_episode_rewards'] = np.sum(episode_rewards[p_id][:, 0, 0, 0])
 
         return env_info
 
