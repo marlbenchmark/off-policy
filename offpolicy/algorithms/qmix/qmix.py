@@ -225,24 +225,8 @@ class QMix(Trainer):
         agent_next_q_sequences = torch.cat(agent_next_q_sequences, dim=-1)
 
         # store the sequences of predicted and next step Q_tot values to form Bellman errors
-        predicted_Q_tot_vals = []
-        next_step_Q_tot_vals = []
-
-        for t in range(len(agent_q_sequences)):
-            # global state should be same across agents
-            curr_state = cent_obs_batch[t]
-            next_state = cent_nobs_batch[t]
-            curr_agent_qs = agent_q_sequences[t]
-            next_step_agent_qs = agent_next_q_sequences[t]
-            curr_Q_tot = self.mixer(curr_agent_qs, curr_state)
-            next_step_Q_tot = self.target_mixer(next_step_agent_qs, next_state)
-
-            predicted_Q_tot_vals.append(curr_Q_tot.squeeze(-1))
-            next_step_Q_tot_vals.append(next_step_Q_tot.squeeze(-1))
-
-        # stack over time dimension
-        predicted_Q_tot_vals = torch.stack(predicted_Q_tot_vals)
-        next_step_Q_tot_vals = torch.stack(next_step_Q_tot_vals)
+        predicted_Q_tot_vals = self.mixer(agent_q_sequences, cent_obs_batch, old=False).squeeze(-1)
+        next_step_Q_tot_vals = self.target_mixer(agent_next_q_sequences, cent_nobs_batch, old=False).squeeze(-1)
 
         # all agents must share reward, so get the reward sequence for an agent
         curr_env_dones = torch.cat((torch.zeros(1, batch_size, 1).to(**self.tpdv), dones_env_batch[:self.episode_length - 1, :, :]))

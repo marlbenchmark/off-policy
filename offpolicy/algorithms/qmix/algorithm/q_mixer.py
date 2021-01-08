@@ -68,6 +68,29 @@ class QMixer(nn.Module):
         agent_q_inps = to_torch(agent_q_inps).to(**self.tpdv)
         states = to_torch(states).to(**self.tpdv)
 
+        batch_size = agent_q_inps.size(1)
+        states = states.view(-1, batch_size, self.cent_obs_dim).float()
+        agent_q_inps = agent_q_inps.view(-1, batch_size, 1, self.num_mixer_q_inps)
+
+        w1 = torch.abs(self.hyper_w1(states))
+        b1 = self.hyper_b1(states)
+        w1 = w1.view(-1, batch_size, self.num_mixer_q_inps, self.hidden_layer_dim)
+        b1 = b1.view(-1, batch_size, 1, self.hidden_layer_dim)
+        hidden_layer = F.elu(torch.matmul(agent_q_inps, w1) + b1)
+
+        w2 = torch.abs(self.hyper_w2(states))
+        b2 = self.hyper_b2(states)
+        w2 = w2.view(-1, batch_size, self.hidden_layer_dim, 1)
+        b2 = b2.view(-1, batch_size, 1, 1)
+        out = torch.matmul(hidden_layer, w2) + b2
+        q_tot = out.view(-1, batch_size, 1, 1)
+        return q_tot
+
+    def forward_old(self, agent_q_inps, states):
+        """outputs Q_tot, using the individual agent Q values and the centralized env state as inputs"""
+        agent_q_inps = to_torch(agent_q_inps).to(**self.tpdv)
+        states = to_torch(states).to(**self.tpdv)
+
         batch_size = agent_q_inps.size(0)
         states = states.view(-1, self.cent_obs_dim).float()
         # reshape agent_q_inps into shape (batch_size x 1 x N) to work with torch.bmm
