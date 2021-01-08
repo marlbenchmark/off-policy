@@ -86,38 +86,3 @@ class QMixer(nn.Module):
         q_tot = out.view(-1, batch_size, 1, 1)
         return q_tot
 
-    def forward_old(self, agent_q_inps, states):
-        """outputs Q_tot, using the individual agent Q values and the centralized env state as inputs"""
-        agent_q_inps = to_torch(agent_q_inps).to(**self.tpdv)
-        states = to_torch(states).to(**self.tpdv)
-
-        batch_size = agent_q_inps.size(0)
-        states = states.view(-1, self.cent_obs_dim).float()
-        # reshape agent_q_inps into shape (batch_size x 1 x N) to work with torch.bmm
-        agent_q_inps = agent_q_inps.view(-1, 1, self.num_mixer_q_inps).float()
-
-        # get the first layer weight matrix batch, apply abs val to ensure nonnegative derivative
-        w1 = torch.abs(self.hyper_w1(states))
-        # get first bias vector
-        b1 = self.hyper_b1(states)
-        # reshape to batch_size x N x Hidden Layer Dim (there's a different weight mat for each batch element)
-        w1 = w1.view(-1, self.num_mixer_q_inps, self.hidden_layer_dim)
-        # reshape to batch_size x 1 x Hidden Layer Dim
-        b1 = b1.view(-1, 1, self.hidden_layer_dim)
-        # pass the agent qs through first layer defined by the weight matrices, and apply Elu activation
-        hidden_layer = F.elu(torch.bmm(agent_q_inps, w1) + b1)
-        # get second layer weight matrix batch
-        w2 = torch.abs(self.hyper_w2(states))
-        # get second layer bias batch
-        b2 = self.hyper_b2(states)
-
-        # reshape to shape (batch_size x hidden_layer dim x 1)
-        w2 = w2.view(-1, self.hidden_layer_dim, 1)
-        # reshape to shape (batch_size x 1 x 1)
-        b2 = b2.view(-1, 1, 1)
-        # pass the hidden layer results through output layer, with no activataion
-        out = torch.bmm(hidden_layer, w2) + b2
-        # reshape to (batch_size, 1, 1)
-        q_tot = out.view(batch_size, -1, 1)
-
-        return q_tot
