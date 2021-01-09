@@ -85,4 +85,3 @@ class QMixer(nn.Module):
         out = torch.matmul(hidden_layer, w2) + b2
         q_tot = out.view(-1, batch_size, 1, 1)
         return q_tot
-

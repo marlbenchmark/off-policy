@@ -52,48 +52,52 @@ class QMixPolicy(RecurrentPolicy):
 
         if action_batch is not None:
             action_batch = to_torch(action_batch).to(self.device)
-            if self.multidiscrete:
-                ind = 0
-                all_q_values = []
-                for i in range(len(self.act_dim)):
-                    curr_q_batch = q_batch[i]
-                    curr_action_portion = action_batch[:,:, ind: ind + self.act_dim[i]]
-                    curr_action_inds = curr_action_portion.max(dim=-1)[1]
-                    curr_q_values = torch.gather(curr_q_batch, 2, curr_action_inds.unsqueeze(dim=-1))
-                    all_q_values.append(curr_q_values)
-                    ind += self.act_dim[i]
-                q_values = torch.cat(all_q_values, dim=-1)
-            else:
-                # convert one-hot action batch to index tensors to gather the q values corresponding to the actions taken
-                action_batch = action_batch.max(dim=-1)[1]
-                # import pdb; pdb.set_trace()
-                q_values = torch.gather(q_batch, 2, action_batch.unsqueeze(dim=-1))
-                # q_values is a column vector containing q values for the actions specified by action_batch
+            q_values = self.q_values_from_actions(q_batch, action_batch)
         else:
             q_values = q_batch
         return q_values, new_rnn_states
+
+    def q_values_from_actions(self, q_batch, action_batch):
+        if self.multidiscrete:
+            ind = 0
+            all_q_values = []
+            for i in range(len(self.act_dim)):
+                curr_q_batch = q_batch[i]
+                curr_action_portion = action_batch[:, :, ind: ind + self.act_dim[i]]
+                curr_action_inds = curr_action_portion.max(dim=-1)[1]
+                curr_q_values = torch.gather(curr_q_batch, 2, curr_action_inds.unsqueeze(dim=-1))
+                all_q_values.append(curr_q_values)
+                ind += self.act_dim[i]
+            q_values = torch.cat(all_q_values, dim=-1)
+        else:
+            # convert one-hot action batch to index tensors to gather the q values corresponding to the actions taken
+            action_batch = action_batch.max(dim=-1)[1]
+            # import pdb; pdb.set_trace()
+            q_values = torch.gather(q_batch, 2, action_batch.unsqueeze(dim=-1))
+            # q_values is a column vector containing q values for the actions specified by action_batch
+        return q_values
 
     def get_actions(self, obs, prev_actions, rnn_states, available_actions=None, t_env=None, explore=False):
         """
         get actions in epsilon-greedy manner, if specified
         """
-        if len(obs.shape) == 2:
-            batch_size = obs.shape[0]
-            no_sequence = True
-        else:
-            batch_size = obs.shape[1]
-            seq_len = obs.shape[0]
-            no_sequence = False
-
         q_values_out, new_rnn_states = self.get_q_values(obs, prev_actions, rnn_states)
+        onehot_actions, greedy_Qs = self.actions_from_q(q_values_out, available_actions=available_actions, explore=explore, t_env=t_env)
+        
+        return onehot_actions, new_rnn_states, greedy_Qs
+
+    def actions_from_q(self, q_values, available_actions=None, explore=False, t_env=None):
+        no_sequence = len(q_values.shape) == 2
+        batch_size = q_values.shape[0] if no_sequence else q_values.shape[1]
+        seq_len = None if no_sequence else q_values.shape[0]
 
         # mask the available actions by giving -inf q values to unavailable actions
         if available_actions is not None:
-            q_values = q_values_out.clone()
+            q_values = q_values.clone()
             q_values = avail_choose(q_values, available_actions)
         else:
-            q_values = q_values_out
-        #greedy_Qs, greedy_actions = list(map(lambda a: a.max(dim=-1), q_values))
+            q_values = q_values
+
         if self.multidiscrete:
             onehot_actions = []
             greedy_Qs = []
@@ -139,8 +143,8 @@ class QMixPolicy(RecurrentPolicy):
                     onehot_actions = make_onehot(greedy_actions, self.act_dim)
                 else:
                     onehot_actions = make_onehot(greedy_actions, self.act_dim, seq_len=seq_len)
-        
-        return onehot_actions, new_rnn_states, greedy_Qs
+
+        return onehot_actions, greedy_Qs
 
     def get_random_actions(self, obs, available_actions=None):
         batch_size = obs.shape[0]
