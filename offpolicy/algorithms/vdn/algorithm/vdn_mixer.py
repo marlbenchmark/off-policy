@@ -28,7 +28,5 @@ class VDNMixer(nn.Module):
 
         if type(agent_q_inps) == np.ndarray:
             agent_q_inps = torch.FloatTensor(agent_q_inps)
-        if type(states) == np.ndarray:
-            states = torch.FloatTensor(states)
 
         return agent_q_inps.sum(dim=-1).view(-1, 1, 1)
