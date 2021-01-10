@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-
 from offpolicy.utils.util import init, to_torch
 from offpolicy.algorithms.utils.rnn import RNNBase
 from offpolicy.algorithms.utils.act import ACTLayer

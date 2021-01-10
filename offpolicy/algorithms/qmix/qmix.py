@@ -1,6 +1,6 @@
 import torch
 import copy
-from offpolicy.utils.util import make_onehot, soft_update, huber_loss, mse_loss, to_torch
+from offpolicy.utils.util import soft_update, huber_loss, mse_loss, to_torch
 from offpolicy.algorithms.qmix.algorithm.q_mixer import QMixer
 from offpolicy.algorithms.vdn.algorithm.vdn_mixer import VDNMixer
 from offpolicy.algorithms.base.trainer import Trainer
