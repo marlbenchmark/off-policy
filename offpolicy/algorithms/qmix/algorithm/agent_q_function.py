@@ -20,6 +20,8 @@ class AgentQFunction(nn.Module):
 
         if self._use_rnn_layer:
             self.rnn = RNNBase(args, input_dim)
+        else:
+            self.mlp = MLPBase(args, input_dim)
 
         self.q = ACTLayer(act_dim, self.hidden_size, self._use_orthogonal, gain=self._gain)
 
@@ -45,9 +47,9 @@ class AgentQFunction(nn.Module):
         if self._use_rnn_layer: 
             rnn_outs, h_final = self.rnn(inp, rnn_states) 
         else:
-            rnn_outs = inp
-            h_final = rnn_states
-            
+            rnn_outs = self.mlp(inp)
+            h_final = rnn_states[0, :, :]
+
         # pass outputs through linear layer
         q_outs = self.q(rnn_outs, no_sequence)
 
