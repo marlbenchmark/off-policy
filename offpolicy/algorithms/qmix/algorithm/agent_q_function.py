@@ -13,11 +13,13 @@ class AgentQFunction(nn.Module):
         super(AgentQFunction, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
+        self._use_rnn_layer = args.use_rnn_layer
         self._gain = args.gain
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
 
-        self.rnn = RNNBase(args, input_dim)
+        if self._use_rnn_layer:
+            self.rnn = RNNBase(args, input_dim)
 
         self.q = ACTLayer(act_dim, self.hidden_size, self._use_orthogonal, gain=self._gain)
 
@@ -40,7 +42,12 @@ class AgentQFunction(nn.Module):
 
         inp = obs
 
-        rnn_outs, h_final = self.rnn(inp, rnn_states)
+        if self._use_rnn_layer: 
+            rnn_outs, h_final = self.rnn(inp, rnn_states) 
+        else:
+            rnn_outs = inp
+            h_final = rnn_states
+            
         # pass outputs through linear layer
         q_outs = self.q(rnn_outs, no_sequence)
 

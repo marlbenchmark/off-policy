@@ -80,9 +80,7 @@ def get_config():
     # recurrent parameters
     parser.add_argument('--prev_act_inp', action='store_true', default=False,
                         help="Whether the actor input takes in previous actions as part of its input")
-    parser.add_argument("--use_rnn_layer", action='store_false',
-                        default=True, help='Whether to use a recurrent policy')
-    parser.add_argument("--use_naive_recurrent_policy", action='store_false',
+    parser.add_argument("--naive_recurrent_policy", action='store_false',
                         default=True, help='Whether to use a naive recurrent policy')
     # TODO now only 1 is support
     parser.add_argument("--recurrent_N", type=int, default=1)

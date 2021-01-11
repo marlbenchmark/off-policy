@@ -70,13 +70,13 @@ class RecRunner(object):
 
         if config.__contains__("buffer_length"):
             self.episode_length = config["buffer_length"]
-            if self.args.naive_recurrent_policy:
+            if self.args.use_naive_recurrent_policy:
                 self.data_chunk_length = config["buffer_length"]
             else:
                 self.data_chunk_length = self.args.data_chunk_length
         else:
             self.episode_length = self.args.episode_length
-            if self.args.naive_recurrent_policy:
+            if self.args.use_naive_recurrent_policy:
                 self.data_chunk_length = self.args.episode_length
             else:
                 self.data_chunk_length = self.args.data_chunk_length
