@@ -187,7 +187,7 @@ class MPERunner(RecRunner):
                                                                 sample=explore)
                     else:
                         act, rnn_state, _ = policy.get_actions(agent_obs,
-                                                                last_acts[p_id],
+                                                                last_acts[p_id].squeeze(axis=0),
                                                                 rnn_states[agent_id],
                                                                 t_env=self.total_env_steps,
                                                                 explore=explore)

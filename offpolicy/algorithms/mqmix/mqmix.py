@@ -140,27 +140,24 @@ class M_QMix:
             with torch.no_grad():
                 if self.args.use_double_q:
                     # actions come from live q; get the q values for the final nobs
-                    pol_final_next_qs = policy.get_q_values(stacked_nobs_batch)
+                    pol_next_qs = policy.get_q_values(stacked_nobs_batch)
 
-                    if type(pol_final_next_qs) == list:
+                    if type(pol_next_qs) == list:
                         # multidiscrete case
                         assert stacked_navail_act_batch is None, "Available actions not supported for multidiscrete"
                         pol_nacts = []
-                        for i in range(len(pol_final_next_qs)):
-                            pol_final_curr_qs = pol_final_next_qs[i]
-                            pol_all_curr_q_out_seq = pol_all_q_out[i]
-                            pol_all_nq_out_curr_seq = torch.cat(
-                                (pol_all_curr_q_out_seq[1:], pol_final_curr_qs[None]))
-                            pol_curr_nacts = pol_all_nq_out_curr_seq.max(dim=-1)[1]
+                        for i in range(len(pol_next_qs)):
+                            curr_next_q = pol_next_qs[i]
+                            pol_curr_nacts = curr_next_q.max(dim=-1)[1]
                             pol_nacts.append(pol_curr_nacts)
                         #pol_nacts = np.concatenate(pol_nacts, axis=-1)
                         targ_pol_next_qs = target_policy.get_q_values(stacked_nobs_batch, action_batch=pol_nacts)
                     else:
                         # mask out the unavailable actions
                         if stacked_navail_act_batch is not None:
-                            pol_final_next_qs[stacked_navail_act_batch == 0.0] = -1e10
+                            pol_next_qs[stacked_navail_act_batch == 0.0] = -1e10
                         # greedily choose actions which maximize the q values and convert these actions to onehot
-                        pol_nacts = pol_final_next_qs.max(dim=-1)[1]
+                        pol_nacts = pol_next_qs.max(dim=-1)[1]
                         # q values given by target but evaluated at actions taken by live
                         targ_pol_next_qs = target_policy.get_q_values(stacked_nobs_batch, action_batch=pol_nacts)
                 else:
