@@ -54,12 +54,9 @@ class HanabiRunner(RecRunner):
         terminate_episodes = False
 
         rnn_states = torch.zeros((self.num_envs, len(self.policy_agents[p_id]), self.hidden_size))
-        if is_multidiscrete(self.policy_info[p_id]['act_space']):
-            self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
-        else:
-            self.sum_act_dim = self.policy_act_dim[p_id]
+        self.act_dim = policy.output_dim
 
-        last_acts = np.zeros((self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim))
+        last_acts = np.zeros((self.num_envs, len(self.policy_agents[p_id]), self.act_dim))
 
         # init
         episode_obs = {}

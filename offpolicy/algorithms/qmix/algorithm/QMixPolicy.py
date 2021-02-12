@@ -17,6 +17,7 @@ class QMixPolicy(RecurrentPolicy):
         self.obs_dim = get_dim_from_space(self.obs_space)
         self.act_space = policy_config["act_space"]
         self.act_dim = get_dim_from_space(self.act_space)
+        self.output_dim = sum(self.act_dim) if isinstance(self.act_dim, np.ndarray) else self.act_dim
         self.hidden_size = self.args.hidden_size
         self.central_obs_dim = policy_config["cent_obs_dim"]
         self.discrete = is_discrete(self.act_space)
@@ -87,9 +88,14 @@ class QMixPolicy(RecurrentPolicy):
         return onehot_actions, new_rnn_states, greedy_Qs
 
     def actions_from_q(self, q_values, available_actions=None, explore=False, t_env=None):
-        no_sequence = len(q_values.shape) == 2
-        batch_size = q_values.shape[0] if no_sequence else q_values.shape[1]
-        seq_len = None if no_sequence else q_values.shape[0]
+        if self.multidiscrete:
+            no_sequence = len(q_values[0].shape) == 2
+            batch_size = q_values[0].shape[0] if no_sequence else q_values[0].shape[1]
+            seq_len = None if no_sequence else q_values[0].shape[0]
+        else:
+            no_sequence = len(q_values.shape) == 2
+            batch_size = q_values.shape[0] if no_sequence else q_values.shape[1]
+            seq_len = None if no_sequence else q_values.shape[0]
 
         # mask the available actions by giving -inf q values to unavailable actions
         if available_actions is not None:

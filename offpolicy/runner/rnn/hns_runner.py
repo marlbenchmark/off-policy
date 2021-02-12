@@ -54,12 +54,9 @@ class HNSRunner(RecRunner):
             obs, share_obs, _ = env.reset()
 
             rnn_states_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.hidden_size), dtype=np.float32)
-            if is_multidiscrete(self.policy_info[p_id]['act_space']):
-                self.sum_act_dim = int(np.sum(self.policy_act_dim[p_id]))
-            else:
-                self.sum_act_dim = self.policy_act_dim[p_id]
+            self.act_dim = self.policies[p_id].output_dim
 
-            last_acts_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
+            last_acts_batch = np.zeros((self.num_envs * len(self.policy_agents[p_id]), self.act_dim), dtype=np.float32)
 
             # init
             episode_obs = {}
@@ -76,7 +73,7 @@ class HNSRunner(RecRunner):
 
             episode_obs[p_id] = np.zeros((self.episode_length, *obs.shape), dtype=np.float32)
             episode_share_obs[p_id] = np.zeros((self.episode_length, *share_obs.shape), dtype=np.float32)
-            episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.sum_act_dim), dtype=np.float32)
+            episode_acts[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), self.act_dim), dtype=np.float32)
             episode_rewards[p_id] = np.zeros((self.episode_length, self.num_envs, len(self.policy_agents[p_id]), 1), dtype=np.float32)
             episode_next_obs[p_id] = np.zeros_like(episode_obs[p_id])
             episode_next_share_obs[p_id] = np.zeros_like(episode_share_obs[p_id])

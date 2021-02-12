@@ -101,12 +101,12 @@ class QMix(Trainer):
             policy = self.policies[p_id]
             target_policy = self.target_policies[p_id]
             # get data related to the policy id
-            obs_batch = to_torch(obs_batch[p_id])
+            pol_obs_batch = to_torch(obs_batch[p_id])
             curr_act_batch = to_torch(act_batch[p_id]).to(**self.tpdv)
 
             # stack over policy's agents to process them at once
             stacked_act_batch = torch.cat(list(curr_act_batch), dim=-2)
-            stacked_obs_batch = torch.cat(list(obs_batch), dim=-2)
+            stacked_obs_batch = torch.cat(list(pol_obs_batch), dim=-2)
 
             if avail_act_batch[p_id] is not None:
                 curr_avail_act_batch = to_torch(avail_act_batch[p_id])
@@ -115,7 +115,7 @@ class QMix(Trainer):
                 stacked_avail_act_batch = None
 
             # [num_agents, episode_length, episodes, dim]
-            batch_size = obs_batch.shape[2]
+            batch_size = pol_obs_batch.shape[2]
             total_batch_size = batch_size * len(self.policy_agents[p_id])
 
             sum_act_dim = int(sum(policy.act_dim)) if policy.multidiscrete else policy.act_dim
@@ -127,8 +127,11 @@ class QMix(Trainer):
             pol_all_q_seq, _ = policy.get_q_values(stacked_obs_batch, pol_prev_act_buffer_seq,
                                                                             policy.init_hidden(-1, total_batch_size))
             # get only the q values corresponding to actions taken in action_batch. Ignore the last time dimension.
-            pol_q_seq = policy.q_values_from_actions(pol_all_q_seq[:-1], stacked_act_batch)
-            # don't need last Q values for curr step
+            if policy.multidiscrete:
+                pol_all_q_curr_seq = [q_seq[:-1] for q_seq in pol_all_q_seq]
+                pol_q_seq = policy.q_values_from_actions(pol_all_q_curr_seq, stacked_act_batch)
+            else:
+                pol_q_seq = policy.q_values_from_actions(pol_all_q_seq[:-1], stacked_act_batch)
             agent_q_out_sequence = pol_q_seq.split(split_size=batch_size, dim=-2)
             agent_q_seq.append(torch.cat(agent_q_out_sequence, dim=-1))
 

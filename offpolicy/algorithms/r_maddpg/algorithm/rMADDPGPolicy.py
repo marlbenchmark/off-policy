@@ -25,6 +25,7 @@ class R_MADDPGPolicy(RecurrentPolicy):
         self.obs_dim = get_dim_from_space(self.obs_space)
         self.act_space = policy_config["act_space"]
         self.act_dim = get_dim_from_space(self.act_space)
+        self.output_dim = sum(self.act_dim) if isinstance(self.act_dim, np.ndarray) else self.act_dim
         self.hidden_size = self.args.hidden_size
         self.discrete = is_discrete(self.act_space)
         self.multidiscrete = is_multidiscrete(self.act_space)

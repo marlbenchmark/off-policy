@@ -26,6 +26,7 @@ class MADDPGPolicy:
         self.multidiscrete = is_multidiscrete(self.act_space)
 
         self.act_dim = get_dim_from_space(self.act_space)
+        self.output_dim = sum(self.act_dim) if isinstance(self.act_dim, np.ndarray) else self.act_dim
         self.target_noise = target_noise
 
         actor_class = MATD3_Actor if td3 else MADDPG_Actor
