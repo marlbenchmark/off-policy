@@ -9,6 +9,14 @@ from offpolicy.algorithms.base.recurrent_policy import RecurrentPolicy
 
 
 class R_MADDPGPolicy(RecurrentPolicy):
+    """
+    Recurrent MADDPG/MATD3 Policy Class to wrap actor/critic and compute actions.. See parent class for details.
+    :param config: (dict) contains information about hyperparameters and algorithm configuration
+    :param policy_config: (dict) contains information specific to the policy (obs dim, act dim, etc)
+    :param target_noise: (int) std of target smoothing noise to add for MATD3 (applies only for continuous actions)
+    :param td3: (bool) whether to use MATD3 or MADDPG.
+    :param train: (bool) whether the policy will be trained.
+    """
     def __init__(self, config, policy_config, target_noise=None, td3=False, train=True):
 
         self.config = config
@@ -53,6 +61,11 @@ class R_MADDPGPolicy(RecurrentPolicy):
         self.target_noise = target_noise
 
     def get_actions(self, obs, prev_actions, rnn_states, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
+        """
+        See parent class.
+        :param use_target: (bool) whether to use the target actor or live actor.
+        :param use_gumbel: (bool) whether to apply gumbel softmax on the actions.
+        """
         assert prev_actions is None or len(obs.shape) == len(prev_actions.shape)
         # obs is either an array of shape (batch_size, obs_dim) or (seq_len, batch_size, obs_dim)
         if len(obs.shape) == 2:
@@ -121,12 +134,14 @@ class R_MADDPGPolicy(RecurrentPolicy):
         return actions, new_rnn_states, eps
 
     def init_hidden(self, num_agents, batch_size):
+        """See parent class."""
         if num_agents == -1:
             return torch.zeros(batch_size, self.hidden_size)
         else:
             return torch.zeros(num_agents, batch_size, self.hidden_size)
 
     def get_random_actions(self, obs, available_actions=None):
+        """See parent class."""
         batch_size = obs.shape[0]
 
         if self.discrete:
@@ -146,11 +161,11 @@ class R_MADDPGPolicy(RecurrentPolicy):
         return random_actions
 
     def soft_target_updates(self):
-        # polyak updates to target networks
+        """Soft update the target networks through a Polyak averaging update."""
         soft_update(self.target_critic, self.critic, self.tau)
         soft_update(self.target_actor, self.actor, self.tau)
 
     def hard_target_updates(self):
-        # polyak updates to target networks
+        """Hard update target networks by copying the weights of the live networks."""
         hard_update(self.target_critic, self.critic)
         hard_update(self.target_actor, self.actor)
