@@ -212,6 +212,7 @@ class StarCraft2Env(MultiAgentEnv):
         self.obs_own_health = obs_own_health
         self.obs_all_health = obs_all_health
         self.obs_instead_of_state = args.use_obs_instead_of_state
+        self.use_global_all_local_state = args.use_global_all_local_state
         self.obs_last_action = obs_last_action
 
         self.obs_pathing_grid = obs_pathing_grid
@@ -1199,6 +1200,12 @@ class StarCraft2Env(MultiAgentEnv):
 
         state = state.astype(dtype=np.float32)
 
+        if self.use_global_all_local_state:
+            obs_concat = np.concatenate(self.get_obs(), axis=0).astype(
+                np.float32
+            )
+            state = np.concatenate([np.array(state), np.array(obs_concat)], axis=-1)
+
         if self.debug:
             logging.debug("STATE".center(60, "-"))
             logging.debug("Ally state {}".format(ally_state))
@@ -1305,6 +1312,9 @@ class StarCraft2Env(MultiAgentEnv):
         if self.state_timestep_number:
             timestep_state = 1
             size += timestep_state
+
+        if self.use_global_all_local_state:
+            size += self.get_obs_size()[0]
 
         # return [size, [self.n_agents, nf_al], [self.n_enemies, nf_en], [1,last_action_state+timestep_state]]
         return [size]

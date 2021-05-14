@@ -56,6 +56,8 @@ def parse_args(args, parser):
                         default=True, help="Whether to use available actions")
     parser.add_argument('--use_same_share_obs', action='store_false',
                         default=True, help="Whether to use available actions")
+    parser.add_argument('--use_global_all_local_state', action='store_true',
+                        default=False, help="Whether to use available actions")
 
     all_args = parser.parse_known_args(args)[0]
 
