@@ -316,7 +316,7 @@ class StarCraft2Env(MultiAgentEnv):
 
         # Setting up the interface
         interface_options = sc_pb.InterfaceOptions(raw=True, score=False)
-        self._sc2_proc = self._run_config.start(window_size=self.window_size)
+        self._sc2_proc = self._run_config.start(window_size=self.window_size, want_rgb=False)
         self._controller = self._sc2_proc.controller
 
         # Request to create the game
@@ -829,7 +829,7 @@ class StarCraft2Env(MultiAgentEnv):
         replay_dir = self.replay_dir or ""
         replay_path = self._run_config.save_replay(
             self._controller.save_replay(), replay_dir=replay_dir, prefix=prefix)
-        logging.info("Replay saved at: %s" % replay_path)
+        print("Replay saved at: %s" % replay_path)
 
     def unit_max_shield(self, unit):
         """Returns maximal shield for a given unit."""
@@ -1201,9 +1201,7 @@ class StarCraft2Env(MultiAgentEnv):
         state = state.astype(dtype=np.float32)
 
         if self.use_global_all_local_state:
-            obs_concat = np.concatenate(self.get_obs(), axis=0).astype(
-                np.float32
-            )
+            obs_concat = np.concatenate(self.get_obs(), axis=0).astype(np.float32)
             state = np.concatenate([np.array(state), np.array(obs_concat)], axis=-1)
 
         if self.debug:
@@ -1314,7 +1312,7 @@ class StarCraft2Env(MultiAgentEnv):
             size += timestep_state
 
         if self.use_global_all_local_state:
-            size += self.get_obs_size()[0]
+            size += self.get_obs_size()[0] * self.n_agents
 
         # return [size, [self.n_agents, nf_al], [self.n_enemies, nf_en], [1,last_action_state+timestep_state]]
         return [size]

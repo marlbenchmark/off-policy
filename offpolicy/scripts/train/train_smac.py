@@ -127,6 +127,7 @@ def main(args):
 
     # create policies and mapping fn
     if all_args.share_policy:
+        print(env.share_observation_space[0])
         policy_info = {
             'policy_0': {"cent_obs_dim": get_dim_from_space(env.share_observation_space[0]),
                          "cent_act_dim": get_cent_act_dim(env.action_space),
