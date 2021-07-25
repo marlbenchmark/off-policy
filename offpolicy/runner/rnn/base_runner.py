@@ -13,7 +13,6 @@ class RecRunner(object):
     def __init__(self, config):
         """
         Base class for training recurrent policies.
-
         :param config: (dict) Config dictionary containing parameters for training.
         """
         self.args = config["args"]
@@ -180,7 +179,6 @@ class RecRunner(object):
     
     def run(self):
         """Collect a training episode and perform appropriate training, saving, logging, and evaluation steps."""
-
         # collect data
         self.trainer.prep_rollout()
         env_info = self.collecter(explore=True, training_episode=True, warmup=False)

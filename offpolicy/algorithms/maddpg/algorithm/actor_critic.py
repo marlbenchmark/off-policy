@@ -6,6 +6,13 @@ from offpolicy.algorithms.utils.act import ACTLayer
 
 class MADDPG_Actor(nn.Module):
     def __init__(self, args, obs_dim, act_dim, device):
+        """
+        Actor network class for MADDPG/MATD3. Outputs actions given observations.
+        :param args: (argparse.Namespace) arguments containing relevant model information.
+        :param obs_dim: (int) dimension of the observation vector.
+        :param act_dim: (int) dimension of the action vector.
+        :param device: (torch.device) specifies the device to run on (cpu/gpu).
+        """
         super(MADDPG_Actor, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self._gain = args.gain
@@ -22,9 +29,11 @@ class MADDPG_Actor(nn.Module):
         self.to(device)
 
     def forward(self, x):
-        # make sure input is a torch tensor
+        """
+        Compute actions using the needed information.
+        :param x: (np.ndarray) Observations with which to compute actions.
+        """
         x = to_torch(x).to(**self.tpdv)
-
         x = self.mlp(x)
         # pass outputs through linear layer
         action = self.act(x)
@@ -33,6 +42,14 @@ class MADDPG_Actor(nn.Module):
 
 
 class MADDPG_Critic(nn.Module):
+    """
+    Critic network class for MADDPG/MATD3. Outputs actions given observations.
+    :param args: (argparse.Namespace) arguments containing relevant model information.
+    :param central_obs_dim: (int) dimension of the centralized observation vector.
+    :param central_act_dim: (int) dimension of the centralized action vector.
+    :param device: (torch.device) specifies the device to run on (cpu/gpu).
+    :param num_q_outs: (int) number of q values to output (1 for MADDPG, 2 for MATD3).
+    """
     def __init__(self, args, central_obs_dim, central_act_dim, device, num_q_outs=1):
         super(MADDPG_Critic, self).__init__()
         self._use_orthogonal = args.use_orthogonal
@@ -52,7 +69,13 @@ class MADDPG_Critic(nn.Module):
         self.to(device)
 
     def forward(self, central_obs, central_act):
-        # ensure inputs are torch tensors
+        """
+        Compute Q-values using the needed information.
+        :param central_obs: (np.ndarray) Centralized observations with which to compute Q-values.
+        :param central_act: (np.ndarray) Centralized actions with which to compute Q-values.
+
+        :return q_values: (list) Q-values outputted by each Q-network.
+        """
         central_obs = to_torch(central_obs).to(**self.tpdv)
         central_act = to_torch(central_act).to(**self.tpdv)
 

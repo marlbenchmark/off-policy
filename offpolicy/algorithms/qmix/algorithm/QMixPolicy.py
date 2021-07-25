@@ -9,7 +9,10 @@ from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscre
 class QMixPolicy(RecurrentPolicy):
     def __init__(self, config, policy_config, train=True):
         """
-        init relevent args
+        QMIX/VDN Policy Class to compute Q-values and actions. See parent class for details.
+        :param config: (dict) contains information about hyperparameters and algorithm configuration
+        :param policy_config: (dict) contains information specific to the policy (obs dim, act dim, etc)
+        :param train: (bool) whether the policy will be trained.
         """
         self.args = config["args"]
         self.device = config['device']
@@ -38,8 +41,13 @@ class QMixPolicy(RecurrentPolicy):
 
     def get_q_values(self, obs_batch, prev_action_batch, rnn_states, action_batch=None):
         """
-        Get q values for state action pair batch
-        Prev_action_batch: batch_size x action_dim, rows are onehot is onehot row matrix, but action_batch is a nx1 vector (not onehot)
+        Computes q values using the given information.
+        :param obs: (np.ndarray) agent observations from which to compute q values
+        :param prev_actions: (np.ndarray) agent previous actions which are optionally an input to q network
+        :param rnn_states: (np.ndarray) RNN states of q network
+        :param action_batch: (np.ndarray) if not None, then only return the q values corresponding to actions in action_batch
+        :return q_values: (torch.Tensor) computed q values
+        :return new_rnn_states: (torch.Tensor) updated RNN states
         """
 
         # combine previous action with observation for input into q, if specified in args
@@ -59,6 +67,12 @@ class QMixPolicy(RecurrentPolicy):
         return q_values, new_rnn_states
 
     def q_values_from_actions(self, q_batch, action_batch):
+        """
+        Get q values corresponding to actions.
+        :param q_batch: (torch.Tensor) q values corresponding to every action.
+        :param action_batch: (torch.Tensor) actions taken by the agent.
+        :return q_values: (torch.Tensor) q values in q_batch corresponding to actions in action_batch
+        """
         if self.multidiscrete:
             ind = 0
             all_q_values = []
@@ -79,15 +93,22 @@ class QMixPolicy(RecurrentPolicy):
         return q_values
 
     def get_actions(self, obs, prev_actions, rnn_states, available_actions=None, t_env=None, explore=False):
-        """
-        get actions in epsilon-greedy manner, if specified
-        """
+        """See parent class."""
         q_values_out, new_rnn_states = self.get_q_values(obs, prev_actions, rnn_states)
         onehot_actions, greedy_Qs = self.actions_from_q(q_values_out, available_actions=available_actions, explore=explore, t_env=t_env)
         
         return onehot_actions, new_rnn_states, greedy_Qs
 
     def actions_from_q(self, q_values, available_actions=None, explore=False, t_env=None):
+        """
+        Computes actions to take given q values.
+        :param q_values: (torch.Tensor) agent observations from which to compute q values
+        :param available_actions: (np.ndarray) actions available to take (None if all actions available)
+        :param explore: (bool) whether to use eps-greedy exploration
+        :param t_env: (int) env step at which this function was called; used to compute eps for eps-greedy
+        :return onehot_actions: (np.ndarray) actions to take (onehot)
+        :return greedy_Qs: (torch.Tensor) q values corresponding to greedy actions.
+        """
         if self.multidiscrete:
             no_sequence = len(q_values[0].shape) == 2
             batch_size = q_values[0].shape[0] if no_sequence else q_values[0].shape[1]
@@ -153,6 +174,7 @@ class QMixPolicy(RecurrentPolicy):
         return onehot_actions, greedy_Qs
 
     def get_random_actions(self, obs, available_actions=None):
+        """See parent class."""
         batch_size = obs.shape[0]
 
         if self.multidiscrete:
@@ -169,13 +191,16 @@ class QMixPolicy(RecurrentPolicy):
         return random_actions
 
     def init_hidden(self, num_agents, batch_size):
+        """See parent class."""
         if num_agents == -1:
             return torch.zeros(batch_size, self.hidden_size)
         else:
             return torch.zeros(num_agents, batch_size, self.hidden_size)
 
     def parameters(self):
+        """See parent class."""
         return self.q_network.parameters()
 
     def load_state(self, source_policy):
+        """See parent class."""
         self.q_network.load_state_dict(source_policy.q_network.state_dict())

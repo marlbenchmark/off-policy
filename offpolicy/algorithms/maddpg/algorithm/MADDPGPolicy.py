@@ -1,15 +1,23 @@
 import torch
 import numpy as np
 from torch.distributions import OneHotCategorical
+from offpolicy.algorithms.base.mlp_policy import MLPPolicy
 from offpolicy.algorithms.maddpg.algorithm.actor_critic import MADDPG_Actor, MADDPG_Critic
 from offpolicy.algorithms.matd3.algorithm.actor_critic import MATD3_Actor, MATD3_Critic
 from offpolicy.utils.util import is_discrete, is_multidiscrete, get_dim_from_space, DecayThenFlatSchedule, soft_update, hard_update, \
     gumbel_softmax, onehot_from_logits, gaussian_noise, avail_choose, to_numpy
 
 
-class MADDPGPolicy:
+class MADDPGPolicy(MLPPolicy):
+    """
+    MADDPG/MATD3 Policy Class to wrap actor/critic and compute actions. See parent class for details.
+    :param config: (dict) contains information about hyperparameters and algorithm configuration
+    :param policy_config: (dict) contains information specific to the policy (obs dim, act dim, etc)
+    :param target_noise: (int) std of target smoothing noise to add for MATD3 (applies only for continuous actions)
+    :param td3: (bool) whether to use MATD3 or MADDPG.
+    :param train: (bool) whether the policy will be trained.
+    """
     def __init__(self, config, policy_config, target_noise=None, td3=False, train=True):
-
         self.config = config
         self.device = config['device']
         self.args = self.config["args"]
@@ -53,6 +61,7 @@ class MADDPGPolicy:
 
 
     def get_actions(self, obs, available_actions=None, t_env=None, explore=False, use_target=False, use_gumbel=False):
+        """See parent class."""
         batch_size = obs.shape[0]
         eps = None
         if use_target:
@@ -110,6 +119,7 @@ class MADDPGPolicy:
         return actions, eps
 
     def get_random_actions(self, obs, available_actions=None):
+        """See parent class."""
         batch_size = obs.shape[0]
 
         if self.discrete:
@@ -129,11 +139,13 @@ class MADDPGPolicy:
         return random_actions
 
     def soft_target_updates(self):
+        """Polyal update the target networks."""
         # polyak updates to target networks
         soft_update(self.target_critic, self.critic, self.args.tau)
         soft_update(self.target_actor, self.actor, self.args.tau)
 
     def hard_target_updates(self):
+        """Copy the live networks into the target networks."""
         # polyak updates to target networks
         hard_update(self.target_critic, self.critic)
         hard_update(self.target_actor, self.actor)

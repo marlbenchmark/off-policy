@@ -33,6 +33,12 @@ class R_MADDPG_Actor(nn.Module):
         self.to(device)
 
     def forward(self, obs, prev_acts, rnn_states):
+        """
+        Compute actions using the needed information.
+        :param obs: (np.ndarray) Observations with which to compute actions.
+        :param prev_actions: (np.ndarray) Optionally use previous action to  compute actions.
+        :param rnn_states: (np.ndarray / torch.Tensor) RNN state to use to compute actions
+        """
         # make sure input is a torch tensor
         obs = to_torch(obs).to(**self.tpdv)
         rnn_states = to_torch(rnn_states).to(**self.tpdv)
@@ -89,6 +95,14 @@ class R_MADDPG_Critic(nn.Module):
         self.to(device)
 
     def forward(self, central_obs, central_act, rnn_states):
+        """
+        Compute Q-values using the needed information.
+        :param central_obs: (np.ndarray) Centralized observations with which to compute Q-values.
+        :param central_act: (np.ndarray) Centralized actions with which to compute Q-values.
+        :param rnn_states: (np.ndarray / torch.Tensor) RNN state to use to compute Q-values.
+
+        :return q_values: (list) Q-values outputted by each Q-network.
+        """
         # ensure inputs are torch tensors
         central_obs = to_torch(central_obs).to(**self.tpdv)
         central_act = to_torch(central_act).to(**self.tpdv)

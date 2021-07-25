@@ -111,7 +111,6 @@ class R_MADDPG(Trainer):
         else:
             return self.cent_train_policy_on_batch((update_policy_id, batch))
 
-    # @profile
     def shared_train_policy_on_batch(self, update_policy_id, batch):
         """Training function when all agents share the same centralized observation. See train_policy_on_batch."""
         # unpack the batch
@@ -331,7 +330,6 @@ class R_MADDPG(Trainer):
         self.num_updates[update_policy_id] += 1
         return train_info, new_priorities, idxes
 
-    # @profile
     def cent_train_policy_on_batch(self, update_policy_id, batch):
         """Training function when each agent has its own centralized observation. See train_policy_on_batch."""
         # unpack the batch

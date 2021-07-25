@@ -6,11 +6,14 @@ from offpolicy.algorithms.utils.rnn import RNNBase
 from offpolicy.algorithms.utils.act import ACTLayer
 
 class AgentQFunction(nn.Module):
-    # GRU implementation of the Agent Q function
-
+    """
+    Individual agent q network (RNN).
+    :param args: (namespace) contains information about hyperparameters and algorithm configuration
+    :param input_dim: (int) dimension of input to q network
+    :param act_dim: (int) dimension of the action space
+    :param device: (torch.Device) torch device on which to do computations
+    """
     def __init__(self, args, input_dim, act_dim, device):
-        # input dim is agent obs dim + agent acf dim
-        # output dim is act dim
         super(AgentQFunction, self).__init__()
         self._use_orthogonal = args.use_orthogonal
         self.hidden_size = args.hidden_size
@@ -29,7 +32,14 @@ class AgentQFunction(nn.Module):
         self.to(device)
 
     def forward(self, obs, rnn_states):
-        # make sure input is a torch tensor
+        """
+        Compute q values for every action given observations and rnn states.
+        :param obs: (torch.Tensor) observations from which to compute q values.
+        :param rnn_states: (torch.Tensor) rnn states with which to compute q values.
+
+        :return q_outs: (torch.Tensor) q values for every action
+        :return h_final: (torch.Tensor) new rnn states
+        """
         obs = to_torch(obs).to(**self.tpdv)
         rnn_states = to_torch(rnn_states).to(**self.tpdv)
 

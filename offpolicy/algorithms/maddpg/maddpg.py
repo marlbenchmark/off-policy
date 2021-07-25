@@ -339,7 +339,6 @@ class MADDPG(Trainer):
         train_info['critic_grad_norm'] = critic_grad_norm
 
         # actor update
-        # need to zero the critic gradient and the actor gradient since the gradients first flow through critic before getting to actor during backprop
         if update_actor:
             for p in update_policy.critic.parameters():
                 p.requires_grad = False

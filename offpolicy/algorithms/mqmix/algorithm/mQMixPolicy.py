@@ -6,10 +6,13 @@ from offpolicy.utils.util import get_dim_from_space, is_discrete, is_multidiscre
 from offpolicy.algorithms.base.mlp_policy import MLPPolicy
 
 class M_QMixPolicy(MLPPolicy):
+    """
+    QMIX/VDN Policy Class to compute Q-values and actions (MLP). See parent class for details.
+    :param config: (dict) contains information about hyperparameters and algorithm configuration
+    :param policy_config: (dict) contains information specific to the policy (obs dim, act dim, etc)
+    :param train: (bool) whether the policy will be trained.
+    """
     def __init__(self, config, policy_config, train=True):
-        """
-        init relevent args
-        """
         self.args = config["args"]
         self.device = config['device']
         self.obs_space = policy_config["obs_space"]
@@ -31,8 +34,11 @@ class M_QMixPolicy(MLPPolicy):
 
     def get_q_values(self, obs_batch, action_batch=None):
         """
-        Get q values for state action pair batch
-        Action_batch is a nx1 vector (not onehot)
+        Computes q values using the given information.
+        :param obs_batch: (np.ndarray) agent observations from which to compute q values
+        :param action_batch: (np.ndarray) if not None, then only return the q values corresponding to actions in action_batch
+
+        :return q_values: (torch.Tensor) computed q values
         """
         q_batch = self.q_network(obs_batch)
         if action_batch is not None:
@@ -54,7 +60,7 @@ class M_QMixPolicy(MLPPolicy):
 
     def get_actions(self, obs_batch, available_actions=None, t_env=None, explore=False):
         """
-        get actions in epsilon-greedy manner, if specified
+        See parent class.
         """
         batch_size = obs_batch.shape[0]
         q_values_out = self.get_q_values(obs_batch)
@@ -107,6 +113,7 @@ class M_QMixPolicy(MLPPolicy):
         return onehot_actions, greedy_Qs
 
     def get_random_actions(self, obs, available_actions=None):
+        """See parent class."""
         batch_size = obs.shape[0]
 
         if self.multidiscrete:

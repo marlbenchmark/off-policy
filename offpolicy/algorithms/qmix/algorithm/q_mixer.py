@@ -5,13 +5,15 @@ from offpolicy.utils.util import init, to_torch
 
 class QMixer(nn.Module):
     """
-    computes Q_tot from individual Q_a values and the state
+    Computes total Q values given agent q values and global states.
+    :param args: (namespace) contains information about hyperparameters and algorithm configuration
+    :param num_agents: (int) number of agents in env
+    :param cent_obs_dim: (int) dimension of the centralized state
+    :param device: (torch.Device) torch device on which to do computations.
+    :param multidiscrete_list: (list) list of each action dimension if action space is multidiscrete
     """
 
     def __init__(self, args, num_agents, cent_obs_dim, device, multidiscrete_list=None):
-        """
-        init mixer class
-        """
         super(QMixer, self).__init__()
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
@@ -64,7 +66,12 @@ class QMixer(nn.Module):
         self.to(device)
 
     def forward(self, agent_q_inps, states):
-        """outputs Q_tot, using the individual agent Q values and the centralized env state as inputs"""
+        """
+         Computes Q_tot using the individual agent q values and global state.
+         :param agent_q_inps: (torch.Tensor) individual agent q values
+         :param states: (torch.Tensor) state input to the hypernetworks.
+         :return Q_tot: (torch.Tensor) computed Q_tot values
+         """
         agent_q_inps = to_torch(agent_q_inps).to(**self.tpdv)
         states = to_torch(states).to(**self.tpdv)
 

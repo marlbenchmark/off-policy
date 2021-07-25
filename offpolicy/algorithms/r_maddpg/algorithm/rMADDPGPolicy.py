@@ -10,7 +10,7 @@ from offpolicy.algorithms.base.recurrent_policy import RecurrentPolicy
 
 class R_MADDPGPolicy(RecurrentPolicy):
     """
-    Recurrent MADDPG/MATD3 Policy Class to wrap actor/critic and compute actions.. See parent class for details.
+    Recurrent MADDPG/MATD3 Policy Class to wrap actor/critic and compute actions. See parent class for details.
     :param config: (dict) contains information about hyperparameters and algorithm configuration
     :param policy_config: (dict) contains information specific to the policy (obs dim, act dim, etc)
     :param target_noise: (int) std of target smoothing noise to add for MATD3 (applies only for continuous actions)
@@ -18,7 +18,6 @@ class R_MADDPGPolicy(RecurrentPolicy):
     :param train: (bool) whether the policy will be trained.
     """
     def __init__(self, config, policy_config, target_noise=None, td3=False, train=True):
-
         self.config = config
         self.device = config['device']
         self.args = self.config["args"]

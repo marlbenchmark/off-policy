@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 import time
-
-from offpolicy.utils.util import is_multidiscrete
 from offpolicy.runner.rnn.base_runner import RecRunner
 
 class SMACRunner(RecRunner):

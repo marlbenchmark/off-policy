@@ -2,7 +2,6 @@ import numpy as np
 import wandb
 import torch
 import time
-from offpolicy.utils.util import is_multidiscrete
 from offpolicy.runner.rnn.base_runner import RecRunner
 
 class HNSRunner(RecRunner):
