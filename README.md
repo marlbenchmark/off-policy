@@ -80,11 +80,11 @@ There are 3 Cooperative scenarios in MPE:
 * simple_reference
 
 ## 3.Train
-Here we use train_mpe.sh as an example:
+Here we use train_mpe_maddpg.sh as an example:
 ```
 cd onpolicy/scripts
-chmod +x ./train_mpe.sh
-./train_mpe.sh
+chmod +x ./train_mpe_maddpg.sh
+./train_mpe_maddpg.sh
 ```
 Local results are stored in subfold scripts/results. Note that we use Weights & Bias as the default visualization platform; to use Weights & Bias, please register and login to the platform first. More instructions for using Weights&Bias can be found in the official [documentation](https://docs.wandb.ai/). Adding the `--use_wandb` in command line or in the .sh file will use Tensorboard instead of Weights & Biases. 
 
