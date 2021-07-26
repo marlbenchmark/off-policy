@@ -14,10 +14,11 @@ This repository contains implementations of various off-policy multi-agent reinf
 - [Multiagent Particle-World Environments (MPEs)](https://github.com/openai/multiagent-particle-envs)
 
 ## 1. Usage
-**WARNING: by default all experiments assume a shared policy by all agents i.e. there is one neural network shared by all agents**
+**WARNING #1: by default all experiments assume a shared policy by all agents i.e. there is one neural network shared by all agents**
+**WARNING #2: QMIX, VDN and MADDPG are thoroughly tested; we display results using our implementation here: TODO. 
 
 All core code is located within the offpolicy folder. The algorithms/ subfolder contains algorithm-specific code
-for all methods. RMADDPG and RMATD3 refer to RNN implementationso of MADDPG and MATD3, and mQMIX and mVDN refer to MLP implementations of QMIX and VDN.
+for all methods. RMADDPG and RMATD3 refer to RNN implementationso of MADDPG and MATD3, and mQMIX and mVDN refer to MLP implementations of QMIX and VDN. We additionally support prioritized experience replay (PER).
 
 * The envs/ subfolder contains environment wrapper implementations for the MPEs and SMAC. 
 
