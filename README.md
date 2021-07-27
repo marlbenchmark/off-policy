@@ -83,7 +83,7 @@ There are 3 Cooperative scenarios in MPE:
 ## 3.Train
 Here we use train_mpe_maddpg.sh as an example:
 ```
-cd onpolicy/scripts
+cd offpolicy/scripts
 chmod +x ./train_mpe_maddpg.sh
 ./train_mpe_maddpg.sh
 ```
