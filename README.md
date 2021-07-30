@@ -2,6 +2,8 @@
 
 This repository contains implementations of various off-policy multi-agent reinforcement learning (MARL) algorithms.
 
+Authors: Akash Velu and Chao Yu.
+
 ## Algorithms supported:
 - MADDPG (MLP and RNN)
 - MATD3 (MLP and RNN)
