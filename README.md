@@ -1,4 +1,4 @@
-# Off-Policy multi-agent reinforcement learning (MARL) algorithms. 
+# Off-Policy Multi-Agent Reinforcement Learning (MARL) Algorithms
 
 This repository contains implementations of various off-policy multi-agent reinforcement learning (MARL) algorithms.
 
