@@ -16,7 +16,7 @@ This repository contains implementations of various off-policy multi-agent reinf
 ## 1. Usage
 **WARNING #1: by default all experiments assume a shared policy by all agents i.e. there is one neural network shared by all agents**
 
-**WARNING #2: only QMIX and MADDPG are thoroughly tested; we display results using our implementation [here](https://docs.google.com/document/d/1s0Kb76b7v4WGyhiCNLrt9St-WvhGnl2AUQCe1FS-ADM/edit?usp=sharing).**
+**WARNING #2: only QMIX and MADDPG are thoroughly tested; however,our VDN and MATD3 implementations make small modifications to QMIX and MADDPG, respectively. We display results using our implementation [here](https://docs.google.com/document/d/1s0Kb76b7v4WGyhiCNLrt9St-WvhGnl2AUQCe1FS-ADM/edit?usp=sharing).**
 
 All core code is located within the offpolicy folder. The algorithms/ subfolder contains algorithm-specific code
 for all methods. RMADDPG and RMATD3 refer to RNN implementationso of MADDPG and MATD3, and mQMIX and mVDN refer to MLP implementations of QMIX and VDN. We additionally support prioritized experience replay (PER).
