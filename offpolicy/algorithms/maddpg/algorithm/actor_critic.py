@@ -64,7 +64,7 @@ class MADDPG_Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
-        self.q_outs = [init_(nn.Linear(self.hidden_size, 1)) for _ in range(num_q_outs)]
+        self.q_outs = nn.ModuleList([init_(nn.Linear(self.hidden_size, 1)) for _ in range(num_q_outs)])
         
         self.to(device)
 
