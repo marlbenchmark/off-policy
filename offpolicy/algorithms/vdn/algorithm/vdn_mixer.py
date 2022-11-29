@@ -36,5 +36,6 @@ class VDNMixer(nn.Module):
 
         if type(agent_q_inps) == np.ndarray:
             agent_q_inps = torch.FloatTensor(agent_q_inps)
-
-        return agent_q_inps.sum(dim=-1).view(-1, 1, 1)
+            
+        batch_size = agent_q_inps.size(1)
+        return agent_q_inps.sum(dim=-1).view(-1, batch_size, 1, 1)
