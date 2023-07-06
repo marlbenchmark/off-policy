@@ -48,8 +48,8 @@ pip install torch==1.5.1+cu101 torchvision==0.6.1+cu101 -f https://download.pyto
 ```
 
 ```
-# install on-policy package
-cd on-policy
+# install off-policy package
+cd off-policy
 pip install -e .
 ```
 
